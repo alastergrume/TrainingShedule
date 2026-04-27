@@ -1,0 +1,33 @@
+# Core
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+alembic==1.13.1
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+
+# Telegram
+aiogram==3.0.0b7
+
+# VK
+vk-api==11.9.9
+
+# Celery
+celery==5.3.4
+redis==5.0.1
+
+# Scheduling
+celery-beat==2.5.0
+python-crontab==3.0.0
+
+# Utilities
+pydantic==2.5.0
+pydantic-settings==2.1.0
+loguru==0.7.2
+python-multipart==0.0.6
+
+# Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+isort==5.12.0
