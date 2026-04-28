@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from datetime import datetime, time
+from datetime import datetime
 from enum import Enum
 
 
@@ -16,6 +16,7 @@ class UserCreate(BaseModel):
     username: Optional[str] = None
     first_name: str
     last_name: Optional[str] = None
+    email: Optional[str] = None
     phone: Optional[str] = None
     is_admin: bool = False
 
@@ -27,6 +28,7 @@ class UserResponse(BaseModel):
     username: Optional[str]
     first_name: str
     last_name: Optional[str]
+    email: Optional[str]
     phone: Optional[str]
     is_admin: bool
     created_at: datetime
@@ -40,10 +42,21 @@ class TrainingCreate(BaseModel):
     description: Optional[str] = None
     training_type: TrainingTypeEnum
     day_of_week: int = Field(..., ge=0, le=6)
-    start_time: str = Field(..., regex=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    start_time: str = Field(..., pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     duration_minutes: int = Field(default=60, gt=0)
     max_participants: Optional[int] = None
     is_active: bool = True
+
+
+class TrainingUpdate(BaseModel):
+    title: Optional[str] = Field(None, max_length=200)
+    description: Optional[str] = None
+    training_type: Optional[TrainingTypeEnum] = None
+    day_of_week: Optional[int] = Field(None, ge=0, le=6)
+    start_time: Optional[str] = Field(None, pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    duration_minutes: Optional[int] = Field(None, gt=0)
+    max_participants: Optional[int] = None
+    is_active: Optional[bool] = None
 
 
 class TrainingResponse(BaseModel):
@@ -65,9 +78,16 @@ class TrainingResponse(BaseModel):
 class ScheduleEntryCreate(BaseModel):
     training_id: int
     date: datetime
-    start_time: str = Field(..., regex=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
-    end_time: str = Field(..., regex=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    start_time: str = Field(..., pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    end_time: str = Field(..., pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
     is_cancelled: bool = False
+    cancellation_reason: Optional[str] = None
+
+
+class ScheduleEntryUpdate(BaseModel):
+    start_time: Optional[str] = Field(None, pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    end_time: Optional[str] = Field(None, pattern=r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$")
+    is_cancelled: Optional[bool] = None
     cancellation_reason: Optional[str] = None
 
 

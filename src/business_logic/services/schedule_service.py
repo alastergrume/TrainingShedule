@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, time
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 import logging
 
 from src.models import (
@@ -26,9 +26,7 @@ class ScheduleService:
     def __init__(self, db: Session):
         self.db = db
 
-    # Training management
     def create_training(self, training_data: TrainingCreate) -> Training:
-        """Create a new training template."""
         training = Training(**training_data.dict())
         self.db.add(training)
         self.db.commit()
@@ -36,7 +34,6 @@ class ScheduleService:
         return training
 
     def get_trainings_by_type(self, training_type: TrainingType) -> List[Training]:
-        """Get all trainings of a specific type."""
         return (
             self.db.query(Training)
             .filter(Training.training_type == training_type, Training.is_active == True)
@@ -46,11 +43,9 @@ class ScheduleService:
     def generate_weekly_schedule(
         self, week_start: date, include_basic: bool = True
     ) -> List[ScheduleEntry]:
-        """Generate schedule entries for a week based on training templates."""
-        week_end = week_start + timedelta(days=6)
+        """Generate ScheduleEntry rows for a week from Training templates."""
         schedule_entries = []
 
-        # Get all active trainings
         query = self.db.query(Training).filter(Training.is_active == True)
         if not include_basic:
             query = query.filter(Training.training_type != TrainingType.BASIC)
@@ -59,45 +54,36 @@ class ScheduleService:
 
         for day_offset in range(7):
             current_date = week_start + timedelta(days=day_offset)
-            day_of_week = current_date.weekday()  # Monday=0
+            day_of_week = current_date.weekday()
 
-            day_trainings = [t for t in trainings if t.day_of_week == day_of_week]
+            for training in trainings:
+                if training.day_of_week != day_of_week:
+                    continue
 
-            for training in day_trainings:
-                # Calculate start datetime
-                start_time_parts = training.start_time.split(":")
-                start_datetime = datetime.combine(
-                    current_date,
-                    datetime.min.time().replace(
-                        hour=int(start_time_parts[0]), minute=int(start_time_parts[1])
-                    ),
-                )
+                h, m = map(int, training.start_time.split(":"))
+                start_dt = datetime.combine(current_date, time(h, m))
+                end_dt = start_dt + timedelta(minutes=training.duration_minutes)
 
-                # Calculate end datetime
-                end_datetime = start_datetime + timedelta(
-                    minutes=training.duration_minutes
-                )
-
-                # Check if schedule entry already exists
                 existing = (
                     self.db.query(ScheduleEntry)
                     .filter(
                         ScheduleEntry.training_id == training.id,
-                        ScheduleEntry.date == start_datetime,
+                        ScheduleEntry.date == start_dt,
                     )
                     .first()
                 )
+                if existing:
+                    continue
 
-                if not existing:
-                    schedule_entry = ScheduleEntry(
-                        training_id=training.id,
-                        date=start_datetime,
-                        start_time=training.start_time,
-                        end_time=end_datetime.strftime("%H:%M"),
-                        is_cancelled=False,
-                    )
-                    self.db.add(schedule_entry)
-                    schedule_entries.append(schedule_entry)
+                entry = ScheduleEntry(
+                    training_id=training.id,
+                    date=start_dt,
+                    start_time=training.start_time,
+                    end_time=end_dt.strftime("%H:%M"),
+                    is_cancelled=False,
+                )
+                self.db.add(entry)
+                schedule_entries.append(entry)
 
         self.db.commit()
         return schedule_entries
@@ -105,39 +91,38 @@ class ScheduleService:
     def get_week_schedule(
         self, week_start: date, include_basic: bool = True
     ) -> List[Dict[str, Any]]:
-        """Get formatted schedule for a week."""
-        week_end = week_start + timedelta(days=6)
+        """Return formatted schedule for a week, grouped by day."""
+        week_start_dt = datetime.combine(week_start, time.min)
+        week_end_dt = datetime.combine(week_start + timedelta(days=7), time.min)
 
-        query = self.db.query(ScheduleEntry).join(Training).filter(
-            and_(
-                ScheduleEntry.date >= week_start,
-                ScheduleEntry.date <= week_end,
-                ScheduleEntry.is_cancelled == False,
+        query = (
+            self.db.query(ScheduleEntry)
+            .join(Training)
+            .filter(
+                and_(
+                    ScheduleEntry.date >= week_start_dt,
+                    ScheduleEntry.date < week_end_dt,
+                    ScheduleEntry.is_cancelled == False,
+                )
             )
         )
-
         if not include_basic:
             query = query.filter(Training.training_type != TrainingType.BASIC)
 
         entries = query.order_by(ScheduleEntry.date, ScheduleEntry.start_time).all()
 
-        # Group by day
-        schedule_by_day = {}
+        schedule_by_day: Dict[str, list] = {}
         for entry in entries:
             day_key = entry.date.strftime("%Y-%m-%d")
-            if day_key not in schedule_by_day:
-                schedule_by_day[day_key] = []
-            schedule_by_day[day_key].append(entry)
+            schedule_by_day.setdefault(day_key, []).append(entry)
 
         result = []
         for day_offset in range(7):
             current_date = week_start + timedelta(days=day_offset)
             day_key = current_date.strftime("%Y-%m-%d")
-            day_entries = schedule_by_day.get(day_key, [])
 
-            # Format each entry
             formatted_entries = []
-            for entry in day_entries:
+            for entry in schedule_by_day.get(day_key, []):
                 bookings = (
                     self.db.query(Booking)
                     .filter(
@@ -155,18 +140,19 @@ class ScheduleService:
                         "type": entry.training.training_type.value,
                         "bookings": [
                             {
+                                "booking_id": b.id,
                                 "user_id": b.user_id,
-                                "user_name": self.db.query(User)
-                                .filter(User.id == b.user_id)
-                                .first()
-                                .first_name,
-                                "status": b.status,
+                                "user_name": self._get_user_name(b.user_id),
+                                "status": b.status.value if hasattr(b.status, "value") else b.status,
+                                "paid": b.payment.is_paid if b.payment else False,
                             }
                             for b in bookings
                         ],
                         "max_participants": entry.training.max_participants,
-                        "is_full": entry.training.max_participants
-                        and len(bookings) >= entry.training.max_participants,
+                        "is_full": bool(
+                            entry.training.max_participants
+                            and len(bookings) >= entry.training.max_participants
+                        ),
                     }
                 )
 
@@ -180,9 +166,13 @@ class ScheduleService:
 
         return result
 
+    def _get_user_name(self, user_id: int) -> str:
+        user = self.db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return "Unknown"
+        return f"{user.first_name} {user.last_name or ''}".strip()
+
     def create_booking(self, booking_data: BookingCreate) -> Booking:
-        """Create a booking for a training."""
-        # Check if training exists and is bookable
         training = (
             self.db.query(Training).filter(Training.id == booking_data.training_id).first()
         )
@@ -190,20 +180,23 @@ class ScheduleService:
             raise ValueError("Training not found")
 
         if training.training_type == TrainingType.BASIC:
-            raise ValueError("Booking not allowed for basic trainings")
+            raise ValueError(
+                "Запись на базовые тренировки не доступна через бота. "
+                "Обратитесь к администраторам фитнес-клуба."
+            )
 
-        # Check capacity
-        if training.max_participants:
+        # Check capacity per specific schedule entry (not the whole template)
+        if training.max_participants and booking_data.schedule_entry_id:
             current_bookings = (
                 self.db.query(Booking)
                 .filter(
-                    Booking.training_id == training.id,
-                    Booking.status.in_(["confirmed", "pending"]),
+                    Booking.schedule_entry_id == booking_data.schedule_entry_id,
+                    Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.PENDING]),
                 )
                 .count()
             )
             if current_bookings >= training.max_participants:
-                raise ValueError("Training is full")
+                raise ValueError("Тренировка заполнена")
 
         booking = Booking(**booking_data.dict())
         self.db.add(booking)
@@ -212,7 +205,6 @@ class ScheduleService:
         return booking
 
     def confirm_booking(self, booking_id: int, admin_id: int) -> Booking:
-        """Confirm a booking by admin."""
         booking = self.db.query(Booking).filter(Booking.id == booking_id).first()
         if not booking:
             raise ValueError("Booking not found")
@@ -223,22 +215,25 @@ class ScheduleService:
         return booking
 
     def cancel_booking(self, booking_id: int, reason: str = None) -> Booking:
-        """Cancel a booking."""
         booking = self.db.query(Booking).filter(Booking.id == booking_id).first()
         if not booking:
             raise ValueError("Booking not found")
 
         booking.status = BookingStatus.CANCELLED
+        if reason:
+            booking.notes = reason
         self.db.commit()
         self.db.refresh(booking)
         return booking
 
     def publish_schedule(
-        self, week_start: date, content: str, telegram_message_id: int = None, vk_post_id: int = None
+        self,
+        week_start: date,
+        content: str,
+        telegram_message_id: int = None,
+        vk_post_id: int = None,
     ) -> PublishedSchedule:
-        """Publish schedule to social networks."""
         week_end = week_start + timedelta(days=6)
-
         published = PublishedSchedule(
             week_start_date=week_start,
             week_end_date=week_end,
@@ -252,7 +247,6 @@ class ScheduleService:
         return published
 
     def get_upcoming_trainings(self, user_id: int, days: int = 7) -> List[Dict]:
-        """Get upcoming trainings for a user."""
         from_date = datetime.now()
         to_date = from_date + timedelta(days=days)
 
@@ -261,7 +255,7 @@ class ScheduleService:
             .join(ScheduleEntry)
             .filter(
                 Booking.user_id == user_id,
-                Booking.status == "confirmed",
+                Booking.status == BookingStatus.CONFIRMED,
                 ScheduleEntry.date >= from_date,
                 ScheduleEntry.date <= to_date,
                 ScheduleEntry.is_cancelled == False,

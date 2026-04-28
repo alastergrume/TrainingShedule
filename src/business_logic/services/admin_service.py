@@ -12,6 +12,7 @@ from src.models import (
     PublishedSchedule,
     AdminAction,
 )
+from src.models.models import Payment
 from src.models.enums import TrainingType, AdminActionType, BookingStatus
 from src.business_logic.schemas import (
     TrainingCreate,
@@ -153,7 +154,7 @@ class AdminService:
         # Notify users with bookings
         bookings = self.db.query(Booking).filter(
             Booking.schedule_entry_id == entry_id,
-            Booking.status.in_(["confirmed", "pending"])
+            Booking.status.in_([BookingStatus.CONFIRMED, BookingStatus.PENDING]),
         ).all()
         
         for booking in bookings:
@@ -175,7 +176,7 @@ class AdminService:
         """Get all pending bookings requiring admin approval."""
         return (
             self.db.query(Booking)
-            .filter(Booking.status == "pending")
+            .filter(Booking.status == BookingStatus.PENDING)
             .order_by(Booking.created_at)
             .all()
         )
@@ -255,6 +256,35 @@ class AdminService:
         self.db.add(action)
         self.db.commit()
     
+    def update_payment_status(self, booking_id: int, is_paid: bool, admin_id: int):
+        """Отметить оплату для бронирования."""
+        from datetime import datetime
+
+        booking = self.db.query(Booking).filter(Booking.id == booking_id).first()
+        if not booking:
+            raise ValueError(f"Booking {booking_id} not found")
+
+        payment = self.db.query(Payment).filter(Payment.booking_id == booking_id).first()
+        if payment:
+            payment.is_paid = is_paid
+            payment.paid_at = datetime.now() if is_paid else None
+        else:
+            payment = Payment(
+                booking_id=booking_id,
+                user_id=booking.user_id,
+                amount=0,
+                is_paid=is_paid,
+                paid_at=datetime.now() if is_paid else None,
+            )
+            self.db.add(payment)
+
+        self.db.commit()
+        return payment
+
+    def get_user_by_telegram_id(self, telegram_id: int):
+        """Найти пользователя по Telegram ID."""
+        return self.db.query(User).filter(User.telegram_id == telegram_id).first()
+
     def get_admin_actions(self, limit: int = 100) -> List[AdminAction]:
         """Get recent admin actions."""
         return (

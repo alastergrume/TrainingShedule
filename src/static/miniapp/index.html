@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Редактор расписания</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-theme-bg-color, #fff);
+    --bg2: var(--tg-theme-secondary-bg-color, #f0f0f0);
+    --text: var(--tg-theme-text-color, #222);
+    --hint: var(--tg-theme-hint-color, #888);
+    --link: var(--tg-theme-link-color, #2678b6);
+    --btn: var(--tg-theme-button-color, #2678b6);
+    --btn-text: var(--tg-theme-button-text-color, #fff);
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg2); color: var(--text); font-family: -apple-system, sans-serif; font-size: 14px; }
+
+  /* Header */
+  .header { background: var(--bg); padding: 12px 16px; position: sticky; top: 0; z-index: 100; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .week-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .week-nav h2 { font-size: 15px; font-weight: 600; }
+  .nav-btn { background: var(--bg2); border: none; border-radius: 8px; padding: 6px 14px; font-size: 18px; cursor: pointer; color: var(--text); }
+  .action-row { display: flex; gap: 8px; }
+  .btn { flex: 1; padding: 9px 0; border: none; border-radius: var(--radius); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-primary { background: var(--btn); color: var(--btn-text); }
+  .btn-secondary { background: var(--bg2); color: var(--text); }
+  .btn-danger { background: #ff3b30; color: #fff; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 8px; border: none; cursor: pointer; font-weight: 500; }
+  .btn-sm.edit { background: #e8f0fe; color: #1a73e8; }
+  .btn-sm.cancel { background: #fce8e6; color: #d93025; }
+  .btn-sm.pay { background: #e6f4ea; color: #1e8e3e; }
+
+  /* Days */
+  .day-block { margin: 10px 10px 0; }
+  .day-header { font-size: 13px; font-weight: 700; color: var(--hint); text-transform: uppercase; letter-spacing: .5px; padding: 6px 4px; }
+
+  /* Training card */
+  .card { background: var(--bg); border-radius: var(--radius); margin-bottom: 8px; overflow: hidden; }
+  .card-head { display: flex; align-items: center; padding: 10px 12px; gap: 10px; cursor: pointer; }
+  .time { font-size: 13px; font-weight: 700; min-width: 48px; color: var(--text); }
+  .title { flex: 1; font-size: 14px; font-weight: 500; }
+  .badge { font-size: 11px; padding: 2px 7px; border-radius: 99px; font-weight: 600; white-space: nowrap; }
+  .badge-basic    { background: #e8f0fe; color: #1a73e8; }
+  .badge-personal { background: #fce8e6; color: #d93025; }
+  .badge-commercial { background: #e6f4ea; color: #1e8e3e; }
+  .cancelled-overlay { opacity: .4; text-decoration: line-through; }
+  .cancelled-badge { font-size: 11px; color: #d93025; font-weight: 600; }
+  .spots { font-size: 12px; color: var(--hint); }
+
+  /* Expanded body */
+  .card-body { border-top: 1px solid var(--bg2); padding: 10px 12px; display: none; }
+  .card-body.open { display: block; }
+  .card-actions { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+
+  /* Participants */
+  .participant-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--bg2); }
+  .participant-row:last-child { border-bottom: none; }
+  .participant-name { flex: 1; font-size: 13px; }
+  .paid-check { width: 20px; height: 20px; cursor: pointer; accent-color: #1e8e3e; }
+  .paid-label { font-size: 12px; color: var(--hint); }
+  .add-participant { margin-top: 8px; width: 100%; padding: 7px; background: var(--bg2); border: 1px dashed var(--hint); border-radius: 8px; font-size: 13px; color: var(--hint); cursor: pointer; text-align: center; }
+  .no-participants { font-size: 13px; color: var(--hint); text-align: center; padding: 8px 0; }
+
+  /* Modal */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 200; display: none; align-items: flex-end; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--bg); border-radius: 20px 20px 0 0; padding: 20px 16px 32px; width: 100%; }
+  .modal h3 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+  .field-row { margin-bottom: 14px; }
+  .field-row label { font-size: 12px; color: var(--hint); display: block; margin-bottom: 4px; }
+  .field-row input { width: 100%; padding: 10px 12px; border: 1px solid var(--bg2); border-radius: 10px; font-size: 14px; background: var(--bg2); color: var(--text); }
+  .modal-actions { display: flex; gap: 8px; margin-top: 4px; }
+
+  /* Toast */
+  .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #333; color: #fff; padding: 8px 18px; border-radius: 20px; font-size: 13px; z-index: 300; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  /* Spinner */
+  .spinner { text-align: center; padding: 40px; color: var(--hint); font-size: 13px; }
+  .empty-day { font-size: 13px; color: var(--hint); text-align: center; padding: 10px 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="week-nav">
+    <button class="nav-btn" onclick="changeWeek(-7)">‹</button>
+    <h2 id="weekLabel">Загрузка...</h2>
+    <button class="nav-btn" onclick="changeWeek(7)">›</button>
+  </div>
+  <div class="action-row">
+    <button class="btn btn-secondary" onclick="generateSchedule()">⚡ Генерировать</button>
+    <button class="btn btn-primary" onclick="publishSchedule()">📢 Опубликовать</button>
+  </div>
+</div>
+
+<div id="scheduleContainer"><div class="spinner">Загрузка расписания...</div></div>
+
+<!-- Edit entry modal -->
+<div class="modal-backdrop" id="editModal">
+  <div class="modal">
+    <h3>Редактировать занятие</h3>
+    <input type="hidden" id="editEntryId">
+    <div class="field-row">
+      <label>Начало (ЧЧ:ММ)</label>
+      <input type="time" id="editStartTime">
+    </div>
+    <div class="field-row">
+      <label>Конец (ЧЧ:ММ)</label>
+      <input type="time" id="editEndTime">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" style="flex:1" onclick="closeModal('editModal')">Отмена</button>
+      <button class="btn btn-primary" style="flex:1" onclick="saveEntry()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Cancel entry modal -->
+<div class="modal-backdrop" id="cancelModal">
+  <div class="modal">
+    <h3>Отменить занятие</h3>
+    <input type="hidden" id="cancelEntryId">
+    <div class="field-row">
+      <label>Причина отмены</label>
+      <input type="text" id="cancelReason" placeholder="Например: тренер заболел">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" style="flex:1" onclick="closeModal('cancelModal')">Назад</button>
+      <button class="btn btn-danger" style="flex:1" onclick="confirmCancel()">Отменить занятие</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const API = '';  // same origin
+let adminId = 1; // fallback; will be resolved via /api/admin/verify
+let currentWeekStart = getMonday(new Date());
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  if (tg?.initDataUnsafe?.user?.id) {
+    const tid = tg.initDataUnsafe.user.id;
+    const r = await fetch(`${API}/api/admin/verify?telegram_id=${tid}`);
+    const d = await r.json();
+    if (d.user_id) adminId = d.user_id;
+  }
+  renderWeekLabel();
+  await loadSchedule();
+}
+
+// ── Week helpers ──────────────────────────────────────────────────────────────
+function getMonday(d) {
+  const day = d.getDay(), diff = (day === 0 ? -6 : 1 - day);
+  const m = new Date(d); m.setDate(d.getDate() + diff); m.setHours(0,0,0,0);
+  return m;
+}
+
+function fmtDate(d) {
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
+}
+
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function changeWeek(delta) {
+  currentWeekStart = new Date(currentWeekStart.getTime() + delta * 86400000);
+  renderWeekLabel();
+  loadSchedule();
+}
+
+function renderWeekLabel() {
+  const end = new Date(currentWeekStart.getTime() + 6 * 86400000);
+  document.getElementById('weekLabel').textContent =
+    `${fmtDate(currentWeekStart)} – ${fmtDate(end)}`;
+}
+
+// ── Load schedule ─────────────────────────────────────────────────────────────
+async function loadSchedule() {
+  document.getElementById('scheduleContainer').innerHTML =
+    '<div class="spinner">Загрузка...</div>';
+  try {
+    const r = await fetch(`${API}/api/schedule/week?week_start=${isoDate(currentWeekStart)}&include_basic=true`);
+    const data = await r.json();
+    renderSchedule(data.schedule);
+  } catch(e) {
+    document.getElementById('scheduleContainer').innerHTML =
+      '<div class="spinner">Ошибка загрузки</div>';
+  }
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+const RU_DAYS = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+const TYPE_LABEL = { basic: 'Базовая', personal: 'Персональная', commercial: 'Коммерческая💸' };
+const TYPE_BADGE = { basic: 'badge-basic', personal: 'badge-personal', commercial: 'badge-commercial' };
+
+function renderSchedule(days) {
+  if (!days?.length) {
+    document.getElementById('scheduleContainer').innerHTML =
+      '<div class="spinner">Нет данных. Нажмите «Генерировать».</div>';
+    return;
+  }
+
+  let html = '';
+  for (const day of days) {
+    const d = new Date(day.date + 'T00:00:00');
+    const dayName = RU_DAYS[d.getDay()];
+    const dateStr = fmtDate(d);
+    html += `<div class="day-block">
+      <div class="day-header">${dayName} ${dateStr}</div>`;
+
+    if (!day.entries?.length) {
+      html += '<div class="empty-day">Нет тренировок</div>';
+    } else {
+      for (const e of day.entries) {
+        html += renderCard(e);
+      }
+    }
+    html += '</div>';
+  }
+  html += '<div style="height:24px"></div>';
+  document.getElementById('scheduleContainer').innerHTML = html;
+}
+
+function renderCard(e) {
+  const cancelled = e.is_cancelled;
+  const headClass = cancelled ? 'cancelled-overlay' : '';
+  const badge = `<span class="badge ${TYPE_BADGE[e.type]}">${TYPE_LABEL[e.type]}</span>`;
+  const startTime = e.time.split('-')[0];
+  const spots = e.max_participants
+    ? `<span class="spots">${e.bookings?.length || 0}/${e.max_participants}</span>` : '';
+  const cancelledBadge = cancelled ? '<span class="cancelled-badge">ОТМЕНЕНО</span>' : '';
+
+  let participants = '';
+  if (e.type !== 'basic' && e.bookings?.length) {
+    participants = e.bookings.map(b => `
+      <div class="participant-row">
+        <span class="participant-name">${b.user_name}</span>
+        <label class="paid-label">Оплачено</label>
+        <input type="checkbox" class="paid-check"
+          ${b.paid ? 'checked' : ''}
+          onchange="togglePayment(${b.booking_id}, this.checked)"
+          onclick="event.stopPropagation()">
+      </div>`).join('');
+  } else if (e.type !== 'basic') {
+    participants = '<div class="no-participants">Нет записей</div>';
+  }
+
+  const actions = cancelled ? '' : `
+    <div class="card-actions">
+      <button class="btn-sm edit" onclick="openEditModal(${e.id}, '${startTime}', '${e.time.split('-')[1] || ''}');event.stopPropagation()">✏️ Изменить время</button>
+      <button class="btn-sm cancel" onclick="openCancelModal(${e.id});event.stopPropagation()">✖ Отменить</button>
+    </div>`;
+
+  return `
+    <div class="card" id="card-${e.id}">
+      <div class="card-head ${headClass}" onclick="toggleCard(${e.id})">
+        <span class="time">${startTime}</span>
+        <span class="title">${e.title}</span>
+        ${badge} ${spots} ${cancelledBadge}
+      </div>
+      <div class="card-body" id="body-${e.id}">
+        ${actions}
+        ${participants}
+      </div>
+    </div>`;
+}
+
+function toggleCard(id) {
+  const body = document.getElementById(`body-${id}`);
+  body.classList.toggle('open');
+}
+
+// ── Payment toggle ────────────────────────────────────────────────────────────
+async function togglePayment(bookingId, isPaid) {
+  try {
+    await fetch(`${API}/api/admin/bookings/${bookingId}/payment?is_paid=${isPaid}&admin_id=${adminId}`, {
+      method: 'PUT'
+    });
+    showToast(isPaid ? '✅ Оплата отмечена' : 'Оплата снята');
+  } catch(e) {
+    showToast('Ошибка сохранения');
+  }
+}
+
+// ── Edit entry ────────────────────────────────────────────────────────────────
+function openEditModal(id, start, end) {
+  document.getElementById('editEntryId').value = id;
+  document.getElementById('editStartTime').value = start;
+  document.getElementById('editEndTime').value = end;
+  document.getElementById('editModal').classList.add('open');
+}
+
+async function saveEntry() {
+  const id = document.getElementById('editEntryId').value;
+  const start = document.getElementById('editStartTime').value;
+  const end = document.getElementById('editEndTime').value;
+  if (!start || !end) { showToast('Заполните время'); return; }
+
+  try {
+    const r = await fetch(`${API}/api/admin/schedule-entries/${id}?admin_id=${adminId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start_time: start, end_time: end }),
+    });
+    if (!r.ok) throw new Error();
+    closeModal('editModal');
+    showToast('Время изменено');
+    loadSchedule();
+  } catch(e) {
+    showToast('Ошибка сохранения');
+  }
+}
+
+// ── Cancel entry ──────────────────────────────────────────────────────────────
+function openCancelModal(id) {
+  document.getElementById('cancelEntryId').value = id;
+  document.getElementById('cancelReason').value = '';
+  document.getElementById('cancelModal').classList.add('open');
+}
+
+async function confirmCancel() {
+  const id = document.getElementById('cancelEntryId').value;
+  const reason = document.getElementById('cancelReason').value || 'Отменено администратором';
+  try {
+    const r = await fetch(
+      `${API}/api/admin/schedule-entries/${id}/cancel?reason=${encodeURIComponent(reason)}&admin_id=${adminId}`,
+      { method: 'POST' }
+    );
+    if (!r.ok) throw new Error();
+    closeModal('cancelModal');
+    showToast('Занятие отменено');
+    loadSchedule();
+  } catch(e) {
+    showToast('Ошибка');
+  }
+}
+
+// ── Generate / Publish ────────────────────────────────────────────────────────
+async function generateSchedule() {
+  if (!confirm('Сгенерировать расписание на эту неделю из шаблонов?')) return;
+  try {
+    const r = await fetch(
+      `${API}/api/admin/schedule/generate?week_start=${isoDate(currentWeekStart)}&admin_id=${adminId}`,
+      { method: 'POST' }
+    );
+    const d = await r.json();
+    showToast(d.message || 'Расписание создано');
+    loadSchedule();
+  } catch(e) {
+    showToast('Ошибка генерации');
+  }
+}
+
+async function publishSchedule() {
+  if (!confirm('Опубликовать расписание в каналы?')) return;
+  try {
+    const r = await fetch(
+      `${API}/api/admin/schedule/publish?week_start=${isoDate(currentWeekStart)}&admin_id=${adminId}`,
+      { method: 'POST' }
+    );
+    const d = await r.json();
+    showToast('📢 ' + (d.message || 'Опубликовано'));
+  } catch(e) {
+    showToast('Ошибка публикации');
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+// Close modals on backdrop click
+document.querySelectorAll('.modal-backdrop').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+init();
+</script>
+</body>
+</html>

@@ -1,10 +1,20 @@
 import os
 from typing import List
 from pydantic_settings import BaseSettings
-from pydantic import validator
+from pydantic import field_validator, ConfigDict, JsonValue
 
 
 class Settings(BaseSettings):
+    model_config = ConfigDict(
+        env_file=".env", 
+        case_sensitive=False,
+        json_schema_extra={
+            "properties": {
+                "TELEGRAM_ADMIN_IDS": {"type": "string"}
+            }
+        }
+    )
+    
     # Database
     DATABASE_URL: str = "postgresql://user:password@localhost:5432/training_schedule"
     
@@ -14,15 +24,22 @@ class Settings(BaseSettings):
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHANNEL_ID: str = ""
-    TELEGRAM_ADMIN_IDS: List[int] = []
+    TELEGRAM_ADMIN_IDS: str = ""  # Keep as string first
     
-    @validator("TELEGRAM_ADMIN_IDS", pre=True)
+    @field_validator("TELEGRAM_ADMIN_IDS", mode="after")
+    @classmethod
     def parse_admin_ids(cls, v):
         if isinstance(v, str):
-            if not v.strip():
+            v = v.strip()
+            if not v:
                 return []
-            return [int(id.strip()) for id in v.split(",")]
-        return v
+            try:
+                return [int(id.strip()) for id in v.split(",")]
+            except ValueError:
+                return []
+        if isinstance(v, list):
+            return v
+        return []
     
     # VK
     VK_GROUP_TOKEN: str = ""
@@ -43,10 +60,9 @@ class Settings(BaseSettings):
     # Reminder settings
     REMINDER_MINUTES_BEFORE: int = 60
     ADMIN_NOTIFICATION_ENABLED: bool = True
-    
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+
+    # Mini App — публичный URL приложения (HTTPS в проде, ngrok для локальных тестов)
+    MINIAPP_URL: str = "http://localhost:8000"
 
 
 settings = Settings()

@@ -1,4 +1,20 @@
-version: '3.8'
+x-app-env: &app-env
+  DATABASE_URL: postgresql://user:password@postgres:5432/training_schedule
+  CELERY_BROKER_URL: redis://redis:6379/0
+  CELERY_RESULT_BACKEND: redis://redis:6379/0
+  REDIS_URL: redis://redis:6379/0
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+  TELEGRAM_CHANNEL_ID: ${TELEGRAM_CHANNEL_ID}
+  TELEGRAM_ADMIN_IDS: ${TELEGRAM_ADMIN_IDS}
+  VK_GROUP_TOKEN: ${VK_GROUP_TOKEN}
+  VK_GROUP_ID: ${VK_GROUP_ID}
+  VK_CONFIRMATION_CODE: ${VK_CONFIRMATION_CODE}
+  VK_SECRET_KEY: ${VK_SECRET_KEY}
+  SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+  DEBUG: ${DEBUG:-false}
+  REMINDER_MINUTES_BEFORE: ${REMINDER_MINUTES_BEFORE:-60}
+  ADMIN_NOTIFICATION_ENABLED: ${ADMIN_NOTIFICATION_ENABLED:-true}
+  MINIAPP_URL: ${MINIAPP_URL:-http://localhost:8000}
 
 services:
   postgres:
@@ -29,6 +45,16 @@ services:
       timeout: 5s
       retries: 5
 
+  migrate:
+    build: .
+    environment:
+      <<: *app-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: alembic upgrade head
+    restart: "no"
+
   app:
     build: .
     ports:
@@ -38,11 +64,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgresql://user:password@postgres:5432/training_schedule
-      REDIS_URL: redis://redis:6379/0
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      VK_GROUP_TOKEN: ${VK_GROUP_TOKEN}
+      <<: *app-env
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations
@@ -51,13 +76,14 @@ services:
   celery:
     build: .
     depends_on:
-      - redis
-      - postgres
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgresql://user:password@postgres:5432/training_schedule
-      REDIS_URL: redis://redis:6379/0
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      VK_GROUP_TOKEN: ${VK_GROUP_TOKEN}
+      <<: *app-env
     volumes:
       - ./src:/app/src
     command: celery -A src.celery_app worker --loglevel=info
@@ -65,16 +91,31 @@ services:
   celery-beat:
     build: .
     depends_on:
-      - redis
-      - postgres
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgresql://user:password@postgres:5432/training_schedule
-      REDIS_URL: redis://redis:6379/0
-      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      VK_GROUP_TOKEN: ${VK_GROUP_TOKEN}
+      <<: *app-env
     volumes:
       - ./src:/app/src
     command: celery -A src.celery_app beat --loglevel=info
+
+  telegram-bot:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *app-env
+    volumes:
+      - ./src:/app/src
+    command: python scripts/run_telegram_bot.py
+    restart: unless-stopped
 
 volumes:
   postgres_data:
