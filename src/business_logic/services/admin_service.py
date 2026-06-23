@@ -247,6 +247,9 @@ class AdminService:
     # Helper methods
     def _log_admin_action(self, admin_id: int, action_type: str, target_id: Optional[int] = None, details: Optional[str] = None):
         """Log an administrative action."""
+        from src.models.models import User
+        if not self.db.query(User).filter(User.id == admin_id).first():
+            return
         action = AdminAction(
             admin_id=admin_id,
             action_type=action_type,

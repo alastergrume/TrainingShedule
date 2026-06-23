@@ -395,6 +395,15 @@ async def miniapp():
     return FileResponse(path)
 
 
+@app.get("/admin")
+async def admin_panel():
+    """Веб-панель администратора."""
+    path = os.path.join(os.path.dirname(__file__), "static", "admin", "index.html")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Admin panel not found")
+    return FileResponse(path)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("src.main:app", host=settings.HOST, port=settings.PORT, reload=settings.DEBUG)

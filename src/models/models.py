@@ -39,7 +39,7 @@ class Training(Base):
     id = Column(Integer, primary_key=True, index=True)
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
-    training_type = Column(SQLAlchemyEnum(TrainingType), nullable=False)
+    training_type = Column(SQLAlchemyEnum(TrainingType, values_callable=lambda x: [e.value for e in x]), nullable=False)
     day_of_week = Column(Integer, nullable=False)  # 0=Monday … 6=Sunday
     start_time = Column(String(5), nullable=False)  # "HH:MM"
     duration_minutes = Column(Integer, default=60)
@@ -76,7 +76,7 @@ class Booking(Base):
     training_id = Column(Integer, ForeignKey("trainings.id"), nullable=False)
     schedule_entry_id = Column(Integer, ForeignKey("schedule_entries.id"), nullable=True)
     status = Column(
-        SQLAlchemyEnum(BookingStatus),
+        SQLAlchemyEnum(BookingStatus, values_callable=lambda x: [e.value for e in x]),
         default=BookingStatus.PENDING,
     )
     notes = Column(Text, nullable=True)
@@ -137,7 +137,7 @@ class AdminAction(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    action_type = Column(SQLAlchemyEnum(AdminActionType), nullable=False)
+    action_type = Column(SQLAlchemyEnum(AdminActionType, values_callable=lambda x: [e.value for e in x]), nullable=False)
     target_id = Column(Integer, nullable=True)
     details = Column(Text, nullable=True)
     performed_at = Column(DateTime(timezone=True), server_default=func.now())
