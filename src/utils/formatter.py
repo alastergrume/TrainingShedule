@@ -34,6 +34,8 @@ class ScheduleFormatter:
             day_date = day_data.get('date')
             if isinstance(day_date, datetime):
                 day_date = day_date.date()
+            elif isinstance(day_date, str):
+                day_date = date.fromisoformat(day_date[:10])
 
             if not day_date or not day_data.get('entries'):
                 continue

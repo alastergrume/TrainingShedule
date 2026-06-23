@@ -103,11 +103,16 @@ class TelegramBot(MessengerInterface):
 
     async def send_message(self, chat_id: str, text: str, **kw) -> Any:
         try:
+            message_kwargs = {
+                'chat_id': chat_id,
+                'text': text,
+                'reply_markup': kw.get('reply_markup'),
+                'disable_web_page_preview': kw.get('disable_web_page_preview', True),
+            }
+            if kw.get('parse_mode') is not None:
+                message_kwargs['parse_mode'] = kw['parse_mode']
             msg = await self.bot.send_message(
-                chat_id=chat_id, text=text,
-                parse_mode=kw.get('parse_mode', 'HTML'),
-                reply_markup=kw.get('reply_markup'),
-                disable_web_page_preview=kw.get('disable_web_page_preview', True),
+                **message_kwargs,
             )
             return msg.message_id
         except Exception as e:
@@ -115,15 +120,22 @@ class TelegramBot(MessengerInterface):
 
     async def edit_message(self, chat_id: str, message_id: int, text: str, **kw) -> Any:
         try:
+            message_kwargs = {
+                'chat_id': chat_id,
+                'message_id': message_id,
+                'text': text,
+                'reply_markup': kw.get('reply_markup'),
+                'disable_web_page_preview': kw.get('disable_web_page_preview', True),
+            }
+            if kw.get('parse_mode') is not None:
+                message_kwargs['parse_mode'] = kw['parse_mode']
             await self.bot.edit_message_text(
-                chat_id=chat_id, message_id=message_id, text=text,
-                parse_mode=kw.get('parse_mode', 'HTML'),
-                reply_markup=kw.get('reply_markup'),
-                disable_web_page_preview=kw.get('disable_web_page_preview', True),
+                **message_kwargs,
             )
             return True
         except Exception as e:
             logger.error(f"edit_message error: {e}"); raise
+
 
     async def delete_message(self, chat_id: str, message_id: int) -> bool:
         try:
@@ -134,7 +146,11 @@ class TelegramBot(MessengerInterface):
 
     async def send_schedule(self, schedule_data: Dict, **kw) -> Dict:
         text = self._fmt_schedule(schedule_data)
-        mid  = await self.send_message(chat_id=self.channel_id, text=text, **kw)
+        me = await self.bot.get_me()
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📝 Записаться на тренировку", url=f"https://t.me/{me.username}?start=book")
+        ]])
+        mid = await self.send_message(chat_id=self.channel_id, text=text, reply_markup=kb, **kw)
         return {'message_id': mid, 'channel': 'telegram', 'chat_id': self.channel_id}
 
     async def update_schedule(self, schedule_data: Dict, message_id: int, **kw) -> Dict:
@@ -160,10 +176,15 @@ class TelegramBot(MessengerInterface):
 
     def _fmt_schedule(self, schedule_data: Dict) -> str:
         from src.utils.formatter import ScheduleFormatter
+        from datetime import date as date_type
         days = schedule_data.get('days', [])
         if not days:
             return "Расписание недоступно"
-        week_start = days[0].get('date', date.today())
+        raw = days[0].get('date', date.today())
+        if isinstance(raw, str):
+            week_start = date_type.fromisoformat(raw[:10])
+        else:
+            week_start = raw
         return ScheduleFormatter.format_week_schedule(days, week_start)
 
     # ── Handlers ──────────────────────────────────────────────────────────────
@@ -177,6 +198,13 @@ class TelegramBot(MessengerInterface):
         async def cmd_start(msg: Message):
             name = msg.from_user.first_name or 'друг'
             is_adm = self._is_admin(msg.from_user.id)
+
+            # Deep link: /start book — сразу показываем запись
+            args = msg.text.split(maxsplit=1)
+            if len(args) > 1 and args[1].strip() == 'book':
+                await cmd_book(msg)
+                return
+
             text = (
                 f"Привет, {name}! Я бот для записи на тренировки.\n\n"
                 "/schedule — расписание на текущую неделю\n"

@@ -1,3 +1,4 @@
+import sys
 import asyncio
 from celery import Celery
 from celery.schedules import crontab
@@ -8,6 +9,12 @@ from src.config import settings
 from src.models.base import SessionLocal
 from src.models.models import Booking, ScheduleEntry, Reminder, User
 from src.utils.formatter import ScheduleFormatter
+
+# # Register messengers so MessengerFactory knows about them
+# if settings.TELEGRAM_BOT_TOKEN:
+#     from src.messengers.telegram.bot import TelegramBot  # noqa: registers 'telegram'
+# if settings.VK_GROUP_TOKEN:
+#     from src.messengers.vk.bot import VKBot  # noqa: registers 'vk'
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +28,7 @@ celery_app = Celery(
 celery_app.conf.update(
     task_serializer='json',
     accept_content=['json'],
+    broker_connection_retry_on_startup=True,
     result_serializer='json',
     timezone='Europe/Moscow',
     enable_utc=True,
@@ -40,6 +48,13 @@ celery_app.conf.update(
     },
 )
 
+# prefork (по умолчанию) не работает на Windows — billiard падает с PermissionError
+if sys.platform == 'win32':
+    celery_app.conf.worker_pool = 'solo'
+
+# Регистрация мессенджеров в MessengerFactory (Celery не импортирует bot.py сам)
+import src.messengers.telegram.bot  # noqa: F401
+import src.messengers.vk.bot  # noqa: F401
 
 @celery_app.task
 def generate_weekly_schedule():
