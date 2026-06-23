@@ -103,11 +103,16 @@ class TelegramBot(MessengerInterface):
 
     async def send_message(self, chat_id: str, text: str, **kw) -> Any:
         try:
+            message_kwargs = {
+                'chat_id': chat_id,
+                'text': text,
+                'reply_markup': kw.get('reply_markup'),
+                'disable_web_page_preview': kw.get('disable_web_page_preview', True),
+            }
+            if kw.get('parse_mode') is not None:
+                message_kwargs['parse_mode'] = kw['parse_mode']
             msg = await self.bot.send_message(
-                chat_id=chat_id, text=text,
-                parse_mode=kw.get('parse_mode', 'HTML'),
-                reply_markup=kw.get('reply_markup'),
-                disable_web_page_preview=kw.get('disable_web_page_preview', True),
+                **message_kwargs,
             )
             return msg.message_id
         except Exception as e:
@@ -115,11 +120,17 @@ class TelegramBot(MessengerInterface):
 
     async def edit_message(self, chat_id: str, message_id: int, text: str, **kw) -> Any:
         try:
+            message_kwargs = {
+                'chat_id': chat_id,
+                'message_id': message_id,
+                'text': text,
+                'reply_markup': kw.get('reply_markup'),
+                'disable_web_page_preview': kw.get('disable_web_page_preview', True),
+            }
+            if kw.get('parse_mode') is not None:
+                message_kwargs['parse_mode'] = kw['parse_mode']
             await self.bot.edit_message_text(
-                chat_id=chat_id, message_id=message_id, text=text,
-                parse_mode=kw.get('parse_mode', 'HTML'),
-                reply_markup=kw.get('reply_markup'),
-                disable_web_page_preview=kw.get('disable_web_page_preview', True),
+                **message_kwargs,
             )
             return True
         except Exception as e:

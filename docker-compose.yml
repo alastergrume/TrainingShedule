@@ -1,5 +1,5 @@
 x-app-env: &app-env
-  DATABASE_URL: postgresql://user:password@postgres:5432/training_schedule
+  DATABASE_URL: postgresql://postgres:password@10.31.18.43:5432/training_schedule
   CELERY_BROKER_URL: redis://redis:6379/0
   CELERY_RESULT_BACKEND: redis://redis:6379/0
   REDIS_URL: redis://redis:6379/0
@@ -20,7 +20,7 @@ services:
   postgres:
     image: postgres:15-alpine
     environment:
-      POSTGRES_USER: user
+      POSTGRES_USER: scheduler
       POSTGRES_PASSWORD: password
       POSTGRES_DB: training_schedule
     ports:
