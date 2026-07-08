@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -512,6 +513,72 @@ async def publish_schedule(
         "message": "Расписание обновлено" if is_update else "Публикация запущена",
         "preview": content[:300] + "...",
     }
+
+
+# --- Admin: clear week ---
+
+@app.delete("/api/admin/schedule/week")
+async def clear_week(
+    week_start: str,
+    service: ScheduleService = Depends(get_schedule_service),
+):
+    """Delete all schedule entries, bookings, and published messages for a week."""
+    from src.models.models import (
+        ScheduleEntry, Booking, Payment, Reminder, PublishedSchedule,
+    )
+    from src.messengers.interfaces.messenger import MessengerFactory
+
+    ws = datetime.fromisoformat(week_start).date()
+    we_dt = datetime.combine(ws + timedelta(days=7), datetime.min.time())
+    ws_dt = datetime.combine(ws, datetime.min.time())
+    db = service.db
+
+    # Delete messages from TG/VK
+    published = db.query(PublishedSchedule).filter(
+        PublishedSchedule.week_start_date == ws
+    ).first()
+
+    if published:
+        if published.telegram_message_id and settings.TELEGRAM_BOT_TOKEN:
+            try:
+                tg = MessengerFactory.create('telegram')
+                await tg.delete_message(tg.channel_id, published.telegram_message_id)
+            except Exception as e:
+                logger.warning(f"Failed to delete TG message: {e}")
+        if published.vk_post_id and settings.VK_GROUP_TOKEN:
+            try:
+                vk = MessengerFactory.create('vk')
+                await asyncio.to_thread(
+                    vk.vk.wall.delete,
+                    owner_id=f"-{vk.group_id}",
+                    post_id=published.vk_post_id,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to delete VK post: {e}")
+        db.delete(published)
+
+    # Get schedule entry IDs for this week
+    entry_ids = [
+        eid for (eid,) in db.query(ScheduleEntry.id).filter(
+            ScheduleEntry.date >= ws_dt,
+            ScheduleEntry.date < we_dt,
+        ).all()
+    ]
+
+    if entry_ids:
+        booking_ids = [
+            bid for (bid,) in db.query(Booking.id).filter(
+                Booking.schedule_entry_id.in_(entry_ids)
+            ).all()
+        ]
+        if booking_ids:
+            db.query(Reminder).filter(Reminder.booking_id.in_(booking_ids)).delete(synchronize_session=False)
+            db.query(Payment).filter(Payment.booking_id.in_(booking_ids)).delete(synchronize_session=False)
+            db.query(Booking).filter(Booking.id.in_(booking_ids)).delete(synchronize_session=False)
+        db.query(ScheduleEntry).filter(ScheduleEntry.id.in_(entry_ids)).delete(synchronize_session=False)
+
+    db.commit()
+    return {"message": f"Неделя {ws.isoformat()} очищена", "entries_deleted": len(entry_ids)}
 
 
 # --- Admin: check message existence ---

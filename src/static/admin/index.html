@@ -742,7 +742,8 @@ async function loadSchedule() {
           ${tgMessageLink(pubInfo)}
           <button class="btn btn-sm ${pubInfo.published ? 'btn-outline' : 'btn-primary'}" onclick="publishWeek('${weekIso}', this)">
             📢 ${pubInfo.published ? 'Обновить расписание' : 'Опубликовать'}
-          </button>`;
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="clearWeek('${weekIso}', this)" title="Удалить все тренировки и сообщения за эту неделю">🗑 Очистить неделю</button>`;
         container.appendChild(header);
 
         const grid = document.createElement('div');
@@ -767,7 +768,8 @@ async function loadSchedule() {
           ${tgMessageLink(pubInfo)}
           <button class="btn btn-sm ${pubInfo.published ? 'btn-outline' : 'btn-primary'}" onclick="publishWeek('${weekIso}', this)">
             📢 ${pubInfo.published ? 'Обновить расписание' : 'Опубликовать'}
-          </button>`;
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="clearWeek('${weekIso}', this)" title="Удалить все тренировки и сообщения за эту неделю">🗑 Очистить неделю</button>`;
         container.appendChild(header);
 
         const card = document.createElement('div');
@@ -809,6 +811,21 @@ async function publishWeek(weekIso, btn) {
     toast('Ошибка публикации: ' + e.message, 'error');
     btn.disabled = false;
     btn.innerHTML = isUpdate ? '📢 Обновить расписание' : '📢 Опубликовать';
+  }
+}
+
+async function clearWeek(weekIso, btn) {
+  if (!confirm(`Очистить неделю ${weekIso}?\n\nБудут удалены все тренировки, записи и опубликованные сообщения за эту неделю.`)) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    await api('DELETE', `/api/admin/schedule/week?week_start=${weekIso}`);
+    toast('Неделя очищена');
+    loadSchedule();
+  } catch(e) {
+    toast('Ошибка: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '🗑 Очистить неделю';
   }
 }
 
