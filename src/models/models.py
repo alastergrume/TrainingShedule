@@ -31,6 +31,7 @@ class User(Base):
 
     bookings = relationship("Booking", back_populates="user")
     payments = relationship("Payment", back_populates="user")
+    training_participations = relationship("TrainingParticipant", back_populates="user")
 
 
 class Training(Base):
@@ -50,6 +51,7 @@ class Training(Base):
 
     bookings = relationship("Booking", back_populates="training")
     schedule_entries = relationship("ScheduleEntry", back_populates="training")
+    participants = relationship("TrainingParticipant", back_populates="training", cascade="all, delete-orphan")
 
 
 class ScheduleEntry(Base):
@@ -66,6 +68,18 @@ class ScheduleEntry(Base):
 
     training = relationship("Training", back_populates="schedule_entries")
     bookings = relationship("Booking", back_populates="schedule_entry")
+
+
+class TrainingParticipant(Base):
+    __tablename__ = "training_participants"
+
+    id = Column(Integer, primary_key=True, index=True)
+    training_id = Column(Integer, ForeignKey("trainings.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    training = relationship("Training", back_populates="participants")
+    user = relationship("User", back_populates="training_participations")
 
 
 class Booking(Base):

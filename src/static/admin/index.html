@@ -103,19 +103,31 @@
   /* Modal */
   .modal-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,.4);
-    display: none; align-items: center; justify-content: center; z-index: 200;
+    display: none; align-items: flex-start; justify-content: center; z-index: 200;
+    padding-top: 60px;
   }
   .modal-overlay.open { display: flex; }
-  .modal { background: var(--card); border-radius: var(--radius); padding: 28px; width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
-  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+  .modal {
+    background: var(--card); border-radius: var(--radius); padding: 28px;
+    width: 480px; max-width: 95vw; max-height: 85vh; overflow-y: auto;
+    position: relative;
+  }
+  .modal-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
+    cursor: grab; user-select: none;
+  }
+  .modal-header:active { cursor: grabbing; }
   .modal-title { font-size: 17px; font-weight: 700; }
   .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--muted); }
   .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 
+  /* Draggable modal */
+  .modal.dragging { box-shadow: 0 12px 40px rgba(0,0,0,.2); }
+
   /* Schedule */
-  .week-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .week-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
   .week-nav span { font-size: 15px; font-weight: 600; min-width: 200px; text-align: center; }
-  .schedule-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; }
+  .schedule-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 16px; }
   .day-col { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
   .day-header { padding: 10px; text-align: center; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; }
   .day-header .date { color: var(--muted); font-weight: 400; font-size: 11px; }
@@ -129,6 +141,20 @@
   .training-chip .time { color: var(--muted); font-size: 11px; }
   .training-chip.cancelled { background: #fee2e2; border-color: var(--danger); opacity: .7; }
   .empty-day { text-align: center; color: var(--muted); font-size: 12px; padding: 16px 0; }
+
+  /* Schedule list view */
+  .schedule-list { display: none; }
+  .schedule-list.active { display: block; }
+  .schedule-grid-wrap { display: block; }
+  .schedule-grid-wrap.hidden { display: none; }
+  .schedule-list-item {
+    display: flex; align-items: center; gap: 16px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); font-size: 14px;
+  }
+  .schedule-list-item:last-child { border-bottom: none; }
+  .schedule-list-item:hover { background: var(--bg); }
+  .schedule-list-day { font-weight: 600; min-width: 120px; }
+  .schedule-list-time { color: var(--muted); min-width: 100px; }
 
   /* Actions bar */
   .actions-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
@@ -147,6 +173,36 @@
 
   .section-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
   .text-muted { color: var(--muted); font-size: 13px; }
+
+  /* Participants autocomplete */
+  .participant-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; position: relative; }
+  .participant-row input { flex: 1; }
+  .participant-row .btn-remove { padding: 4px 8px; font-size: 16px; line-height: 1; }
+  .autocomplete-list {
+    position: absolute; top: 100%; left: 0; right: 40px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; max-height: 160px;
+    overflow-y: auto; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,.1);
+    display: none;
+  }
+  .autocomplete-list.open { display: block; }
+  .autocomplete-item {
+    padding: 8px 12px; cursor: pointer; font-size: 13px;
+  }
+  .autocomplete-item:hover { background: var(--bg); }
+
+  /* View toggle */
+  .view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .view-toggle button {
+    padding: 6px 14px; border: none; background: #fff; cursor: pointer;
+    font-size: 13px; color: var(--muted); transition: all .15s;
+  }
+  .view-toggle button.active { background: var(--primary); color: #fff; }
+  .view-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
+
+  /* Weeks count setting */
+  .weeks-setting { display: flex; align-items: center; gap: 8px; }
+  .weeks-setting label { margin: 0; font-size: 13px; white-space: nowrap; }
+  .weeks-setting select { width: 60px; padding: 5px 8px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -154,19 +210,19 @@
 <div class="sidebar">
   <div class="sidebar-logo">🏋️ Расписание</div>
   <nav>
-    <button class="nav-item active" onclick="showPage('dashboard')">
+    <button class="nav-item active" data-page="dashboard" onclick="showPage('dashboard', this)">
       <span class="nav-icon">📊</span> Дашборд
     </button>
-    <button class="nav-item" onclick="showPage('schedule')">
+    <button class="nav-item" data-page="schedule" onclick="showPage('schedule', this)">
       <span class="nav-icon">📅</span> Расписание
     </button>
-    <button class="nav-item" onclick="showPage('trainings')">
+    <button class="nav-item" data-page="trainings" onclick="showPage('trainings', this)">
       <span class="nav-icon">🏃</span> Тренировки
     </button>
-    <button class="nav-item" onclick="showPage('bookings')">
+    <button class="nav-item" data-page="bookings" onclick="showPage('bookings', this)">
       <span class="nav-icon">📋</span> Бронирования
     </button>
-    <button class="nav-item" onclick="showPage('users')">
+    <button class="nav-item" data-page="users" onclick="showPage('users', this)">
       <span class="nav-icon">👥</span> Пользователи
     </button>
   </nav>
@@ -194,12 +250,10 @@
 
     <div class="card">
       <h2>Быстрые действия</h2>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;">
-        <button class="btn btn-primary" onclick="generateSchedule()">⚡ Сгенерировать расписание на следующую неделю</button>
-        <button class="btn btn-outline" onclick="publishSchedule()">📢 Опубликовать расписание</button>
-        <button class="btn btn-outline" onclick="showPage('bookings')">📋 Ожидающие подтверждения</button>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;align-items:flex-end;">
+        <button class="btn btn-outline" onclick="showPage('schedule', document.querySelector('[data-page=schedule]'))">📅 Расписание</button>
+        <button class="btn btn-outline" onclick="showPage('bookings', document.querySelector('[data-page=bookings]'))">📋 Ожидающие подтверждения</button>
       </div>
-      <div id="generate-result" style="margin-top:12px;font-size:14px;color:var(--muted);"></div>
     </div>
   </div>
 
@@ -211,9 +265,23 @@
       <span id="week-label">Загрузка...</span>
       <button class="btn btn-outline" onclick="changeWeek(1)">Вперёд →</button>
       <button class="btn btn-primary" onclick="loadSchedule()">🔄 Обновить</button>
+      <div class="spacer"></div>
+      <div class="view-toggle">
+        <button class="active" onclick="setScheduleView('calendar', this)">📅 Календарь</button>
+        <button onclick="setScheduleView('list', this)">📋 Список</button>
+      </div>
+      <div class="weeks-setting">
+        <label>Недель:</label>
+        <select id="weeks-count" onchange="loadSchedule()">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+        </select>
+      </div>
     </div>
-    <div class="schedule-grid" id="schedule-grid">
-      <div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted);">Загрузка...</div>
+    <div id="schedule-container">
+      <div style="text-align:center;padding:40px;color:var(--muted);">Загрузка...</div>
     </div>
   </div>
 
@@ -221,9 +289,15 @@
   <div id="page-trainings" class="page">
     <div class="section-top">
       <h1 style="margin:0">Тренировки</h1>
-      <button class="btn btn-primary" onclick="openTrainingModal()">+ Добавить</button>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div class="view-toggle" id="trainings-view-toggle">
+          <button class="active" onclick="setTrainingsView('list', this)">📋 Список</button>
+          <button onclick="setTrainingsView('calendar', this)">📅 Календарь</button>
+        </div>
+        <button class="btn btn-primary" onclick="openTrainingModal()">+ Добавить</button>
+      </div>
     </div>
-    <div class="card">
+    <div id="trainings-list-view" class="card">
       <table>
         <thead>
           <tr>
@@ -233,14 +307,30 @@
             <th>Время</th>
             <th>Длит.</th>
             <th>Макс.</th>
+            <th>Участники</th>
             <th>Статус</th>
             <th></th>
           </tr>
         </thead>
         <tbody id="trainings-body">
-          <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:40px;">Загрузка...</td></tr>
+          <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px;">Загрузка...</td></tr>
         </tbody>
       </table>
+    </div>
+    <div id="trainings-calendar-view" style="display:none;">
+      <div class="schedule-grid" id="trainings-calendar-grid"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h2>Генерация расписания</h2>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+        <div>
+          <label style="font-size:12px;margin-bottom:4px;">Неделя</label>
+          <input type="date" id="generate-week-start" style="width:170px;">
+        </div>
+        <button class="btn btn-primary" onclick="generateSchedule()">⚡ Сгенерировать расписание</button>
+      </div>
+      <div id="generate-result" style="margin-top:12px;font-size:14px;color:var(--muted);"></div>
     </div>
   </div>
 
@@ -299,25 +389,19 @@
 
 <!-- Training Modal -->
 <div class="modal-overlay" id="training-modal">
-  <div class="modal">
-    <div class="modal-header">
+  <div class="modal" id="training-modal-box">
+    <div class="modal-header" id="training-modal-drag">
       <span class="modal-title" id="training-modal-title">Добавить тренировку</span>
       <button class="modal-close" onclick="closeModal('training-modal')">×</button>
     </div>
     <form id="training-form" onsubmit="saveTraining(event)">
       <input type="hidden" id="training-id">
-      <div class="form-group">
-        <label>Название</label>
-        <input type="text" id="t-title" required placeholder="Силовая тренировка">
-      </div>
-      <div class="form-group">
-        <label>Описание</label>
-        <textarea id="t-description" placeholder="Необязательно"></textarea>
-      </div>
+
+      <!-- 1. Тип + День недели -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group">
           <label>Тип</label>
-          <select id="t-type" required>
+          <select id="t-type" required onchange="onTrainingTypeChange()">
             <option value="personal">Персональная</option>
             <option value="commercial">Коммерческая</option>
             <option value="basic">Базовая</option>
@@ -335,6 +419,10 @@
             <option value="6">Воскресенье</option>
           </select>
         </div>
+      </div>
+
+      <!-- 2. Время + Длительность + Макс. + Активная -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group">
           <label>Время начала</label>
           <input type="time" id="t-start-time" required>
@@ -347,13 +435,30 @@
           <label>Макс. участников</label>
           <input type="number" id="t-max" placeholder="Без ограничений" min="1">
         </div>
-        <div class="form-group" style="display:flex;align-items:flex-end;padding-bottom:4px;">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
-            <input type="checkbox" id="t-active" checked style="width:auto;">
-            Активная
-          </label>
-        </div>
       </div>
+
+      <!-- 3. Название -->
+      <div class="form-group">
+        <label>Название</label>
+        <input type="text" id="t-title" required placeholder="Название тренировки">
+      </div>
+
+      <!-- 4. Участники -->
+      <div class="form-group" id="participants-section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <label style="margin:0;">Участники</label>
+          <button type="button" class="btn btn-outline btn-sm" onclick="addParticipantRow()">+ Добавить</button>
+        </div>
+        <div id="participants-limit-msg" style="display:none;color:var(--warning);font-size:12px;margin-bottom:8px;"></div>
+        <div id="participants-container"></div>
+      </div>
+
+      <!-- 5. Описание -->
+      <div class="form-group">
+        <label>Описание</label>
+        <textarea id="t-description" placeholder="Необязательно"></textarea>
+      </div>
+
       <div class="modal-footer">
         <button type="button" class="btn btn-outline" onclick="closeModal('training-modal')">Отмена</button>
         <button type="submit" class="btn btn-primary" id="training-save-btn">Сохранить</button>
@@ -406,11 +511,11 @@ const DAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 const DAYS_FULL = ['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
 
 // ---- Navigation ----
-function showPage(name) {
+function showPage(name, btn) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-' + name).classList.add('active');
-  event.currentTarget.classList.add('active');
+  if (btn) btn.classList.add('active');
 
   if (name === 'dashboard') loadStats();
   if (name === 'schedule') loadSchedule();
@@ -442,7 +547,43 @@ async function api(method, path, body) {
 
 // ---- Modal ----
 function openModal(id) { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  const modal = document.getElementById(id).querySelector('.modal');
+  if (modal) { modal.style.transform = ''; }
+}
+
+// ---- Draggable modals ----
+(function() {
+  let dragTarget = null, startX, startY, origX, origY;
+
+  document.addEventListener('mousedown', function(e) {
+    const header = e.target.closest('.modal-header');
+    if (!header || e.target.closest('.modal-close')) return;
+    const modal = header.closest('.modal');
+    if (!modal) return;
+    dragTarget = modal;
+    const rect = modal.getBoundingClientRect();
+    startX = e.clientX; startY = e.clientY;
+    origX = rect.left; origY = rect.top;
+    modal.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragTarget) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    dragTarget.style.position = 'fixed';
+    dragTarget.style.left = (origX + dx) + 'px';
+    dragTarget.style.top = (origY + dy) + 'px';
+    dragTarget.style.margin = '0';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (dragTarget) { dragTarget.classList.remove('dragging'); dragTarget = null; }
+  });
+})();
 
 // ---- Dashboard ----
 async function loadStats() {
@@ -459,16 +600,21 @@ async function generateSchedule() {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Генерация...';
   const el = document.getElementById('generate-result');
+
+  const weekInput = document.getElementById('generate-week-start').value;
+  let url = '/api/admin/schedule/generate';
+  if (weekInput) url += '?week_start=' + weekInput;
+
   try {
-    const data = await api('POST', '/api/admin/schedule/generate');
-    el.innerHTML = `✅ ${data.message}`;
+    const data = await api('POST', url);
+    el.innerHTML = `✅ ${data.message} (неделя: ${data.week_start})`;
     toast('Расписание сгенерировано');
   } catch(e) {
     el.innerHTML = `❌ ${e.message}`;
     toast('Ошибка: ' + e.message, 'error');
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '⚡ Сгенерировать расписание на следующую неделю';
+    btn.innerHTML = '⚡ Сгенерировать расписание';
   }
 }
 
@@ -488,8 +634,18 @@ async function publishSchedule() {
   }
 }
 
+// ---- Set default generate week to next Monday ----
+(function() {
+  const d = new Date();
+  const daysAhead = ((8 - d.getDay()) % 7) || 7;
+  const nextMon = new Date(d);
+  nextMon.setDate(d.getDate() + daysAhead);
+  document.getElementById('generate-week-start').value = toLocalIso(nextMon);
+})();
+
 // ---- Schedule ----
 let currentWeekStart = getThisMonday();
+let scheduleViewMode = 'calendar';
 
 function getThisMonday() {
   const d = new Date();
@@ -502,40 +658,151 @@ function fmtDate(d) {
   return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit' });
 }
 
+function toLocalIso(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function changeWeek(dir) {
+  const weeksCount = parseInt(document.getElementById('weeks-count').value) || 1;
   currentWeekStart = new Date(currentWeekStart);
-  currentWeekStart.setDate(currentWeekStart.getDate() + dir * 7);
+  currentWeekStart.setDate(currentWeekStart.getDate() + dir * 7 * weeksCount);
+  loadSchedule();
+}
+
+function setScheduleView(mode, btn) {
+  scheduleViewMode = mode;
+  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
   loadSchedule();
 }
 
 async function loadSchedule() {
-  const grid = document.getElementById('schedule-grid');
-  grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--muted);">Загрузка...</div>';
+  const container = document.getElementById('schedule-container');
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Загрузка...</div>';
 
-  const iso = currentWeekStart.toISOString().split('T')[0];
-  const end = new Date(currentWeekStart);
-  end.setDate(end.getDate() + 6);
+  const weeksCount = parseInt(document.getElementById('weeks-count').value) || 1;
+
+  const lastWeekStart = new Date(currentWeekStart);
+  lastWeekStart.setDate(lastWeekStart.getDate() + (weeksCount - 1) * 7);
+  const lastWeekEnd = new Date(lastWeekStart);
+  lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
+
   document.getElementById('week-label').textContent =
-    fmtDate(currentWeekStart) + ' — ' + fmtDate(end);
+    fmtDate(currentWeekStart) + ' — ' + fmtDate(lastWeekEnd);
 
   try {
-    const data = await api('GET', `/api/schedule/week?week_start=${iso}`);
-    renderSchedule(data.schedule);
+    let allSchedules = [];
+    const weekIsos = [];
+    for (let w = 0; w < weeksCount; w++) {
+      const weekStart = new Date(currentWeekStart);
+      weekStart.setDate(weekStart.getDate() + w * 7);
+      const weekIso = toLocalIso(weekStart);
+      weekIsos.push(weekIso);
+      const data = await api('GET', `/api/schedule/week?week_start=${weekIso}`);
+      allSchedules.push({ weekStart, weekIso, schedule: data.schedule });
+    }
+
+    // Load publish statuses
+    let publishStatuses = {};
+    try {
+      publishStatuses = await api('GET', `/api/admin/schedule/publish-status?week_starts=${weekIsos.join(',')}`);
+    } catch(e) {}
+
+    container.innerHTML = '';
+
+    if (scheduleViewMode === 'calendar') {
+      for (const { weekStart, weekIso, schedule } of allSchedules) {
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        const pubInfo = publishStatuses[weekIso] || {};
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;';
+        header.innerHTML = `
+          <span style="font-size:14px;font-weight:600;color:var(--muted);">${fmtDate(weekStart)} — ${fmtDate(weekEnd)}</span>
+          ${pubInfo.published
+            ? `<span style="font-size:12px;color:var(--success);font-weight:500;">✅ Опубликовано</span>`
+            : `<span style="font-size:12px;color:var(--warning);font-weight:500;">⏳ Не опубликовано</span>`}
+          <button class="btn btn-sm ${pubInfo.published ? 'btn-outline' : 'btn-primary'}" onclick="publishWeek('${weekIso}', this)">
+            📢 ${pubInfo.published ? 'Обновить расписание' : 'Опубликовать'}
+          </button>`;
+        container.appendChild(header);
+
+        const grid = document.createElement('div');
+        grid.className = 'schedule-grid';
+        grid.style.marginBottom = '20px';
+        container.appendChild(grid);
+        renderScheduleGrid(grid, schedule, weekStart);
+      }
+    } else {
+      for (const { weekStart, weekIso, schedule } of allSchedules) {
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        const pubInfo = publishStatuses[weekIso] || {};
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;';
+        header.innerHTML = `
+          <span style="font-size:14px;font-weight:600;color:var(--muted);">${fmtDate(weekStart)} — ${fmtDate(weekEnd)}</span>
+          ${pubInfo.published
+            ? `<span style="font-size:12px;color:var(--success);font-weight:500;">✅ Опубликовано</span>`
+            : `<span style="font-size:12px;color:var(--warning);font-weight:500;">⏳ Не опубликовано</span>`}
+          <button class="btn btn-sm ${pubInfo.published ? 'btn-outline' : 'btn-primary'}" onclick="publishWeek('${weekIso}', this)">
+            📢 ${pubInfo.published ? 'Обновить расписание' : 'Опубликовать'}
+          </button>`;
+        container.appendChild(header);
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.marginBottom = '20px';
+        container.appendChild(card);
+        renderScheduleList(card, [{ weekStart, schedule }]);
+      }
+    }
   } catch(e) {
-    grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;color:var(--danger);">Ошибка: ${e.message}</div>`;
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--danger);">Ошибка: ${e.message}</div>`;
   }
 }
 
-function renderSchedule(schedule) {
-  const grid = document.getElementById('schedule-grid');
-  grid.innerHTML = '';
+async function publishWeek(weekIso, btn) {
+  const isUpdate = btn.textContent.trim().includes('Обновить');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    if (isUpdate) {
+      const check = await api('GET', `/api/admin/schedule/check-message?week_start=${weekIso}`);
+      if (!check.exists) {
+        toast('Сообщение удалено из канала. Нажмите «Опубликовать» для новой публикации.', 'warning');
+        btn.disabled = false;
+        btn.className = 'btn btn-sm btn-primary';
+        btn.innerHTML = '📢 Опубликовать';
+        const statusSpan = btn.parentElement.querySelector('span[style*="color"]');
+        if (statusSpan) {
+          statusSpan.style.color = 'var(--warning)';
+          statusSpan.textContent = '⏳ Сообщение удалено';
+        }
+        return;
+      }
+    }
+    await api('POST', `/api/admin/schedule/publish?week_start=${weekIso}`);
+    toast(isUpdate ? 'Расписание обновлено' : 'Публикация запущена');
+    loadSchedule();
+  } catch(e) {
+    toast('Ошибка публикации: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = isUpdate ? '📢 Обновить расписание' : '📢 Опубликовать';
+  }
+}
 
-  // API returns array of 7 day objects: { date, day_name, entries: [{id, time, title, type, ...}] }
+function renderScheduleGrid(grid, schedule, weekStart) {
   const days = schedule || [];
 
   for (let i = 0; i < 7; i++) {
     const dayData = days[i] || {};
-    const dayDate = new Date(currentWeekStart);
+    const dayDate = new Date(weekStart);
     dayDate.setDate(dayDate.getDate() + i);
     const col = document.createElement('div');
     col.className = 'day-col';
@@ -568,6 +835,32 @@ function renderSchedule(schedule) {
   }
 }
 
+function renderScheduleList(card, allSchedules) {
+  let html = '';
+  for (const { weekStart, schedule } of allSchedules) {
+    const days = schedule || [];
+    for (let i = 0; i < 7; i++) {
+      const dayData = days[i] || {};
+      const dayDate = new Date(weekStart);
+      dayDate.setDate(dayDate.getDate() + i);
+      const entries = dayData.entries || [];
+      if (!entries.length) continue;
+      entries.forEach(e => {
+        html += `<div class="schedule-list-item">
+          <div class="schedule-list-day">${DAYS_FULL[i]}, ${fmtDate(dayDate)}</div>
+          <div class="schedule-list-time">${e.time || ''}</div>
+          <div style="flex:1;font-weight:500;">${e.title || 'Тренировка'}</div>
+          <span class="badge badge-${e.type}">${typeLabel(e.type)}</span>
+          <div style="font-size:12px;color:var(--muted);min-width:60px;text-align:right;">${e.bookings?.length || 0}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>
+          <button class="btn btn-danger btn-sm" onclick="promptCancelEntry(${e.id})" title="Отменить">✕</button>
+        </div>`;
+      });
+    }
+  }
+  if (!html) html = '<div style="text-align:center;padding:40px;color:var(--muted);">Нет занятий</div>';
+  card.innerHTML = html;
+}
+
 let cancelEntryId = null;
 function promptCancelEntry(id) {
   cancelEntryId = id;
@@ -587,22 +880,37 @@ async function confirmCancel() {
 
 // ---- Trainings ----
 let trainingsData = [];
+let trainingsViewMode = 'list';
+
+function setTrainingsView(mode, btn) {
+  trainingsViewMode = mode;
+  document.querySelectorAll('#trainings-view-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  document.getElementById('trainings-list-view').style.display = mode === 'list' ? '' : 'none';
+  document.getElementById('trainings-calendar-view').style.display = mode === 'calendar' ? '' : 'none';
+
+  if (mode === 'calendar') renderTrainingsCalendar();
+}
 
 async function loadTrainings() {
   try {
     const data = await api('GET', '/api/admin/trainings?include_inactive=true');
     trainingsData = data.trainings || [];
     renderTrainings();
+    if (trainingsViewMode === 'calendar') renderTrainingsCalendar();
   } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
 }
 
 function renderTrainings() {
   const tbody = document.getElementById('trainings-body');
   if (!trainingsData.length) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:40px;">Нет тренировок</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px;">Нет тренировок</td></tr>';
     return;
   }
-  tbody.innerHTML = trainingsData.map(t => `
+  tbody.innerHTML = trainingsData.map(t => {
+    const pNames = (t.participants || []).map(p => `${p.first_name} ${p.last_name || ''}`.trim()).join(', ');
+    return `
     <tr>
       <td><strong>${t.title}</strong>${t.description ? `<div class="text-muted" style="font-size:12px;">${t.description}</div>` : ''}</td>
       <td><span class="badge badge-${t.training_type}">${typeLabel(t.training_type)}</span></td>
@@ -610,21 +918,81 @@ function renderTrainings() {
       <td>${t.start_time}</td>
       <td>${t.duration_minutes} мин</td>
       <td>${t.max_participants ?? '∞'}</td>
+      <td style="max-width:150px;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${pNames}">${pNames || '—'}</td>
       <td><span style="color:${t.is_active ? 'var(--success)' : 'var(--danger)'};">${t.is_active ? '● Активна' : '● Неактивна'}</span></td>
-      <td>
-        <button class="btn btn-outline btn-sm" onclick="openTrainingModal(${t.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteTraining(${t.id})" style="margin-left:4px;">🗑</button>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-outline btn-sm" onclick="copyTraining(${t.id})" title="Копировать">📋</button>
+        <button class="btn btn-outline btn-sm" onclick="openTrainingModal(${t.id})" title="Редактировать">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteTraining(${t.id})" title="Удалить">🗑</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
+}
+
+function renderTrainingsCalendar() {
+  const grid = document.getElementById('trainings-calendar-grid');
+  grid.innerHTML = '';
+
+  const byDay = {};
+  for (let i = 0; i < 7; i++) byDay[i] = [];
+  trainingsData.forEach(t => {
+    if (byDay[t.day_of_week]) byDay[t.day_of_week].push(t);
+  });
+
+  for (let i = 0; i < 7; i++) {
+    const col = document.createElement('div');
+    col.className = 'day-col';
+    col.innerHTML = `
+      <div class="day-header">
+        <div>${DAYS[i]}</div>
+        <div class="date">${DAYS_FULL[i]}</div>
+      </div>
+      <div class="day-body"></div>`;
+    grid.appendChild(col);
+
+    const body = col.querySelector('.day-body');
+    const dayTrainings = byDay[i].sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+    if (!dayTrainings.length) {
+      body.innerHTML = '<div class="empty-day">—</div>';
+    } else {
+      dayTrainings.forEach(t => {
+        const pNames = (t.participants || []).map(p => `${p.first_name} ${p.last_name || ''}`.trim()).join(', ');
+        const chip = document.createElement('div');
+        chip.className = 'training-chip';
+        if (!t.is_active) chip.classList.add('cancelled');
+        chip.innerHTML = `
+          <div style="font-weight:600;">${t.title}</div>
+          <div class="time">${t.start_time} · ${t.duration_minutes} мин</div>
+          <div><span class="badge badge-${t.training_type}" style="font-size:10px;">${typeLabel(t.training_type)}</span></div>
+          ${pNames ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;">${pNames}</div>` : ''}`;
+        chip.style.cursor = 'pointer';
+        chip.onclick = () => openTrainingModal(t.id);
+        chip.title = 'Нажмите для редактирования';
+        body.appendChild(chip);
+      });
+    }
+  }
 }
 
 function typeLabel(t) {
   return { personal: 'Персональная', commercial: 'Коммерческая', basic: 'Базовая' }[t] || t;
 }
 
+// ---- Training Modal ----
+let modalParticipants = []; // [{id, name}] — id=null for new text entries
+
 function openTrainingModal(id) {
+  const modal = document.getElementById('training-modal-box');
+  modal.style.position = '';
+  modal.style.left = '';
+  modal.style.top = '';
+  modal.style.margin = '';
+
   document.getElementById('training-modal-title').textContent = id ? 'Редактировать тренировку' : 'Добавить тренировку';
   document.getElementById('training-id').value = id || '';
+  modalParticipants = [];
+
   if (id) {
     const t = trainingsData.find(x => x.id == id);
     if (t) {
@@ -635,14 +1003,160 @@ function openTrainingModal(id) {
       document.getElementById('t-start-time').value = t.start_time;
       document.getElementById('t-duration').value = t.duration_minutes;
       document.getElementById('t-max').value = t.max_participants || '';
-      document.getElementById('t-active').checked = t.is_active;
+
+      modalParticipants = (t.participants || []).map(p => ({
+        id: p.id,
+        name: `${p.first_name} ${p.last_name || ''}`.trim()
+      }));
     }
   } else {
     document.getElementById('training-form').reset();
-    document.getElementById('t-active').checked = true;
+
     document.getElementById('t-duration').value = 60;
   }
+
+  renderParticipantRows();
+  onTrainingTypeChange();
   openModal('training-modal');
+}
+
+function copyTraining(id) {
+  const t = trainingsData.find(x => x.id == id);
+  if (!t) return;
+
+  const modal = document.getElementById('training-modal-box');
+  modal.style.position = '';
+  modal.style.left = '';
+  modal.style.top = '';
+  modal.style.margin = '';
+
+  document.getElementById('training-modal-title').textContent = 'Добавить тренировку (копия)';
+  document.getElementById('training-id').value = '';
+  document.getElementById('t-title').value = t.title;
+  document.getElementById('t-description').value = t.description || '';
+  document.getElementById('t-type').value = t.training_type;
+  document.getElementById('t-day').value = t.day_of_week;
+  document.getElementById('t-start-time').value = t.start_time;
+  document.getElementById('t-duration').value = t.duration_minutes;
+  document.getElementById('t-max').value = t.max_participants || '';
+  document.getElementById('t-active').checked = t.is_active;
+
+  modalParticipants = (t.participants || []).map(p => ({
+    id: p.id,
+    name: `${p.first_name} ${p.last_name || ''}`.trim()
+  }));
+
+  renderParticipantRows();
+  onTrainingTypeChange();
+  openModal('training-modal');
+}
+
+function onTrainingTypeChange() {
+  document.getElementById('participants-section').style.display = '';
+  checkParticipantsLimit();
+
+  const titleInput = document.getElementById('t-title');
+  const type = document.getElementById('t-type').value;
+  const defaults = { personal: 'Персональная тренировка', commercial: 'Коммерческая тренировка', basic: 'Базовая тренировка' };
+  const isDefault = !titleInput.value || Object.values(defaults).includes(titleInput.value);
+  if (isDefault) {
+    titleInput.value = defaults[type] || '';
+  }
+}
+
+function checkParticipantsLimit() {
+  const max = parseInt(document.getElementById('t-max').value) || 0;
+  const msgEl = document.getElementById('participants-limit-msg');
+  if (max > 0 && modalParticipants.length > max) {
+    msgEl.textContent = `Превышен лимит участников (макс. ${max})`;
+    msgEl.style.display = '';
+  } else {
+    msgEl.style.display = 'none';
+  }
+}
+
+function addParticipantRow() {
+  const max = parseInt(document.getElementById('t-max').value) || 0;
+  if (max > 0 && modalParticipants.length >= max) {
+    toast('Превышен лимит участников (макс. ' + max + ')', 'error');
+    return;
+  }
+  modalParticipants.push({ id: null, name: '' });
+  renderParticipantRows();
+  const inputs = document.querySelectorAll('#participants-container .participant-input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function removeParticipant(idx) {
+  modalParticipants.splice(idx, 1);
+  renderParticipantRows();
+}
+
+function renderParticipantRows() {
+  const container = document.getElementById('participants-container');
+  container.innerHTML = '';
+  modalParticipants.forEach((p, idx) => {
+    const row = document.createElement('div');
+    row.className = 'participant-row';
+    row.innerHTML = `
+      <input type="text" class="participant-input" value="${escHtml(p.name)}"
+             placeholder="Имя участника" data-idx="${idx}"
+             data-user-id="${p.id || ''}"
+             onfocus="showAutocomplete(this)" oninput="onParticipantInput(this)">
+      <div class="autocomplete-list" id="ac-${idx}"></div>
+      <button type="button" class="btn btn-danger btn-sm btn-remove" onclick="removeParticipant(${idx})">✕</button>`;
+    container.appendChild(row);
+  });
+  checkParticipantsLimit();
+}
+
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str || '';
+  return d.innerHTML;
+}
+
+let acDebounce = null;
+function onParticipantInput(input) {
+  const idx = input.dataset.idx;
+  modalParticipants[idx].name = input.value;
+  modalParticipants[idx].id = null;
+
+  clearTimeout(acDebounce);
+  acDebounce = setTimeout(() => fetchAutocomplete(input), 200);
+}
+
+async function showAutocomplete(input) {
+  fetchAutocomplete(input);
+}
+
+async function fetchAutocomplete(input) {
+  const idx = input.dataset.idx;
+  const q = input.value.trim();
+  const list = document.getElementById('ac-' + idx);
+
+  try {
+    const data = await api('GET', '/api/admin/users/search?q=' + encodeURIComponent(q));
+    const users = data.users || [];
+    if (!users.length) { list.classList.remove('open'); return; }
+
+    list.innerHTML = users.map(u => {
+      const name = `${u.first_name} ${u.last_name || ''}`.trim();
+      return `<div class="autocomplete-item" onmousedown="selectParticipant(${idx}, ${u.id}, '${escHtml(name)}')">${name}</div>`;
+    }).join('');
+    list.classList.add('open');
+  } catch(e) {
+    list.classList.remove('open');
+  }
+
+  input.addEventListener('blur', () => {
+    setTimeout(() => list.classList.remove('open'), 150);
+  }, { once: true });
+}
+
+function selectParticipant(idx, userId, name) {
+  modalParticipants[idx] = { id: userId, name };
+  renderParticipantRows();
 }
 
 async function saveTraining(e) {
@@ -650,6 +1164,25 @@ async function saveTraining(e) {
   const id = document.getElementById('training-id').value;
   const btn = document.getElementById('training-save-btn');
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+
+  // Resolve participants: create new users if needed
+  const participantIds = [];
+  for (const p of modalParticipants) {
+    if (!p.name.trim()) continue;
+    if (p.id) {
+      participantIds.push(p.id);
+    } else {
+      try {
+        const parts = p.name.trim().split(/\s+/);
+        const firstName = parts[0];
+        const lastName = parts.slice(1).join(' ') || null;
+        const newUser = await api('POST', '/api/admin/users', { first_name: firstName, last_name: lastName });
+        participantIds.push(newUser.id);
+      } catch(err) {
+        toast('Ошибка создания пользователя: ' + err.message, 'error');
+      }
+    }
+  }
 
   const body = {
     title: document.getElementById('t-title').value,
@@ -659,7 +1192,8 @@ async function saveTraining(e) {
     start_time: document.getElementById('t-start-time').value,
     duration_minutes: parseInt(document.getElementById('t-duration').value),
     max_participants: document.getElementById('t-max').value ? parseInt(document.getElementById('t-max').value) : null,
-    is_active: document.getElementById('t-active').checked,
+    is_active: true,
+    participant_ids: participantIds,
   };
 
   try {

@@ -242,33 +242,89 @@ def cleanup_old_data(days_to_keep: int = 30):
         db.close()
 
 
-@celery_app.task
-def publish_schedule_to_channels(week_start: str, schedule_data: dict):
-    """Публикует расписание во все настроенные каналы."""
+async def _publish_all(schedule_data: dict,
+                       telegram_message_id: int = None,
+                       vk_post_id: int = None):
+    """Single coroutine for all messenger publishing (one event loop)."""
     from src.messengers.interfaces.messenger import MessengerFactory
 
+    results = []
+    new_tg_id = telegram_message_id
+    new_vk_id = vk_post_id
+
+    if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHANNEL_ID:
+        try:
+            telegram = MessengerFactory.create('telegram')
+            if telegram_message_id:
+                try:
+                    result = await telegram.update_schedule(schedule_data, telegram_message_id)
+                    new_tg_id = telegram_message_id
+                except Exception:
+                    logger.warning(f"Failed to edit Telegram message {telegram_message_id}, sending new")
+                    result = await telegram.send_schedule(schedule_data)
+                    new_tg_id = result.get('message_id')
+            else:
+                result = await telegram.send_schedule(schedule_data)
+                new_tg_id = result.get('message_id')
+            results.append({'channel': 'telegram', 'result': result})
+        except Exception as e:
+            logger.error(f"Failed to publish to Telegram: {e}")
+            results.append({'channel': 'telegram', 'error': str(e)})
+
+    if settings.VK_GROUP_TOKEN and settings.VK_GROUP_ID:
+        try:
+            vk = MessengerFactory.create('vk')
+            if vk_post_id:
+                try:
+                    result = await vk.update_schedule(schedule_data, vk_post_id)
+                    new_vk_id = vk_post_id
+                except Exception:
+                    logger.warning(f"Failed to edit VK post {vk_post_id}, sending new")
+                    result = await vk.send_schedule(schedule_data)
+                    new_vk_id = result.get('post_id')
+            else:
+                result = await vk.send_schedule(schedule_data)
+                new_vk_id = result.get('post_id')
+            results.append({'channel': 'vk', 'result': result})
+        except Exception as e:
+            logger.error(f"Failed to publish to VK: {e}")
+            results.append({'channel': 'vk', 'error': str(e)})
+
+    return results, new_tg_id, new_vk_id
+
+
+@celery_app.task
+def publish_schedule_to_channels(week_start: str, schedule_data: dict,
+                                  telegram_message_id: int = None,
+                                  vk_post_id: int = None):
+    """Публикует или обновляет расписание во всех настроенных каналах."""
+    from src.models.models import PublishedSchedule
+
+    db = SessionLocal()
     try:
-        results = []
+        results, new_tg_id, new_vk_id = asyncio.run(
+            _publish_all(schedule_data, telegram_message_id, vk_post_id)
+        )
 
-        if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_CHANNEL_ID:
-            try:
-                telegram = MessengerFactory.create('telegram')
-                result = asyncio.run(telegram.send_schedule(schedule_data))
-                results.append({'channel': 'telegram', 'result': result})
-            except Exception as e:
-                logger.error(f"Failed to publish to Telegram: {e}")
-                results.append({'channel': 'telegram', 'error': str(e)})
-
-        if settings.VK_GROUP_TOKEN and settings.VK_GROUP_ID:
-            try:
-                vk = MessengerFactory.create('vk')
-                result = asyncio.run(vk.send_schedule(schedule_data))
-                results.append({'channel': 'vk', 'result': result})
-            except Exception as e:
-                logger.error(f"Failed to publish to VK: {e}")
-                results.append({'channel': 'vk', 'error': str(e)})
+        # Save message IDs back to PublishedSchedule
+        week_start_date = datetime.fromisoformat(week_start).date()
+        published = (
+            db.query(PublishedSchedule)
+            .filter(PublishedSchedule.week_start_date == week_start_date)
+            .first()
+        )
+        if published:
+            if new_tg_id:
+                published.telegram_message_id = new_tg_id
+            if new_vk_id:
+                published.vk_post_id = new_vk_id
+            published.updated_at = datetime.now()
+            db.commit()
 
         return {"status": "success", "results": results}
     except Exception as e:
+        db.rollback()
         logger.error(f"Failed to publish schedule: {e}")
         return {"status": "error", "error": str(e)}
+    finally:
+        db.close()

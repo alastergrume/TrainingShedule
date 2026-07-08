@@ -6,6 +6,7 @@ import logging
 
 from src.models import (
     Training,
+    TrainingParticipant,
     ScheduleEntry,
     Booking,
     User,
@@ -30,63 +31,115 @@ class AdminService:
         self.db = db
     
     # Training management
+    def _check_time_conflict(self, day_of_week: int, start_time: str, duration_minutes: int, exclude_id: int = None):
+        """Check if there's a time conflict with existing active trainings."""
+        h, m = map(int, start_time.split(":"))
+        new_start = h * 60 + m
+        new_end = new_start + duration_minutes
+
+        query = self.db.query(Training).filter(
+            Training.day_of_week == day_of_week,
+            Training.is_active == True,
+        )
+        if exclude_id:
+            query = query.filter(Training.id != exclude_id)
+
+        for t in query.all():
+            th, tm = map(int, t.start_time.split(":"))
+            existing_start = th * 60 + tm
+            existing_end = existing_start + t.duration_minutes
+            if new_start < existing_end and existing_start < new_end:
+                end_time_str = f"{existing_end // 60:02d}:{existing_end % 60:02d}"
+                raise ValueError(
+                    f"Время занято: «{t.title}» ({t.start_time}–{end_time_str})"
+                )
+
     def create_training(self, training_data: TrainingCreate, admin_id: int) -> Training:
         """Create a new training template."""
-        training = Training(**training_data.dict())
+        data = training_data.dict()
+        participant_ids = data.pop("participant_ids", None) or []
+
+        self._check_time_conflict(data["day_of_week"], data["start_time"], data["duration_minutes"])
+
+        training = Training(**data)
         self.db.add(training)
+        self.db.flush()
+
+        for uid in participant_ids:
+            self.db.add(TrainingParticipant(training_id=training.id, user_id=uid))
+
         self.db.commit()
         self.db.refresh(training)
-        
-        # Log admin action
+
         self._log_admin_action(
             admin_id=admin_id,
             action_type=AdminActionType.CREATE_TRAINING,
             target_id=training.id,
             details=f"Created training: {training.title}"
         )
-        
+
         return training
-    
+
     def update_training(self, training_id: int, update_data: dict, admin_id: int) -> Training:
         """Update an existing training."""
         training = self.db.query(Training).filter(Training.id == training_id).first()
         if not training:
             raise ValueError(f"Training with id {training_id} not found")
-        
+
+        participant_ids = update_data.pop("participant_ids", None)
+
+        day = update_data.get("day_of_week", training.day_of_week)
+        start = update_data.get("start_time", training.start_time)
+        dur = update_data.get("duration_minutes", training.duration_minutes)
+        self._check_time_conflict(day, start, dur, exclude_id=training_id)
+
         for key, value in update_data.items():
             if hasattr(training, key):
                 setattr(training, key, value)
-        
+
+        if participant_ids is not None:
+            self.db.query(TrainingParticipant).filter(
+                TrainingParticipant.training_id == training_id
+            ).delete()
+            for uid in participant_ids:
+                self.db.add(TrainingParticipant(training_id=training_id, user_id=uid))
+
         training.updated_at = datetime.now()
         self.db.commit()
         self.db.refresh(training)
-        
+
         self._log_admin_action(
             admin_id=admin_id,
             action_type=AdminActionType.UPDATE_TRAINING,
             target_id=training.id,
             details=f"Updated training: {training.title}"
         )
-        
+
         return training
-    
+
     def delete_training(self, training_id: int, admin_id: int) -> bool:
-        """Soft delete a training (set is_active=False)."""
+        """Hard delete a training and all related data."""
         training = self.db.query(Training).filter(Training.id == training_id).first()
         if not training:
             raise ValueError(f"Training with id {training_id} not found")
-        
-        training.is_active = False
-        training.updated_at = datetime.now()
+
+        title = training.title
+
+        self.db.query(TrainingParticipant).filter(
+            TrainingParticipant.training_id == training_id
+        ).delete()
+        self.db.query(Booking).filter(Booking.training_id == training_id).delete()
+        self.db.query(ScheduleEntry).filter(ScheduleEntry.training_id == training_id).delete()
+        self.db.delete(training)
         self.db.commit()
-        
+
         self._log_admin_action(
             admin_id=admin_id,
             action_type=AdminActionType.DELETE_TRAINING,
-            target_id=training.id,
-            details=f"Deleted training: {training.title}"
+            target_id=training_id,
+            details=f"Deleted training: {title}"
         )
-        
+
         return True
     
     def get_all_trainings(self, include_inactive: bool = False) -> List[Training]:
@@ -287,6 +340,48 @@ class AdminService:
     def get_user_by_telegram_id(self, telegram_id: int):
         """Найти пользователя по Telegram ID."""
         return self.db.query(User).filter(User.telegram_id == telegram_id).first()
+
+    def search_users(self, query: str) -> List[User]:
+        """Search users by name."""
+        pattern = f"%{query}%"
+        return (
+            self.db.query(User)
+            .filter(
+                or_(
+                    User.first_name.ilike(pattern),
+                    User.last_name.ilike(pattern),
+                    User.username.ilike(pattern),
+                )
+            )
+            .limit(20)
+            .all()
+        )
+
+    def create_quick_user(self, first_name: str, last_name: str = None) -> User:
+        """Create a user with just a name (no messenger IDs yet)."""
+        user = User(first_name=first_name, last_name=last_name)
+        self.db.add(user)
+        self.db.commit()
+        self.db.refresh(user)
+        return user
+
+    def get_training_participants(self, training_id: int) -> List[dict]:
+        """Get participants assigned to a training template."""
+        participants = (
+            self.db.query(TrainingParticipant)
+            .filter(TrainingParticipant.training_id == training_id)
+            .all()
+        )
+        result = []
+        for p in participants:
+            user = self.db.query(User).filter(User.id == p.user_id).first()
+            if user:
+                result.append({
+                    "id": user.id,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                })
+        return result
 
     def get_admin_actions(self, limit: int = 100) -> List[AdminAction]:
         """Get recent admin actions."""
