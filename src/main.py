@@ -414,6 +414,8 @@ async def get_publish_status(
         result[ws] = {
             "published": has_message,
             "published_at": published.published_at.isoformat() if published else None,
+            "telegram_message_id": published.telegram_message_id if published else None,
+            "telegram_channel_id": settings.TELEGRAM_CHANNEL_ID or None,
         }
         if published and published.telegram_message_id:
             to_verify.append((ws, published))

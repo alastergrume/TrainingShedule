@@ -658,6 +658,19 @@ function fmtDate(d) {
   return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit' });
 }
 
+function tgMessageLink(pubInfo) {
+  if (!pubInfo.telegram_message_id || !pubInfo.telegram_channel_id) return '';
+  const ch = pubInfo.telegram_channel_id;
+  let link;
+  if (ch.startsWith('@')) {
+    link = `https://t.me/${ch.slice(1)}/${pubInfo.telegram_message_id}`;
+  } else {
+    const numId = ch.replace(/^-100/, '');
+    link = `https://t.me/c/${numId}/${pubInfo.telegram_message_id}`;
+  }
+  return `<a href="${link}" target="_blank" style="font-size:12px;color:var(--primary);">TG #${pubInfo.telegram_message_id}</a>`;
+}
+
 function toLocalIso(d) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -726,6 +739,7 @@ async function loadSchedule() {
           ${pubInfo.published
             ? `<span style="font-size:12px;color:var(--success);font-weight:500;">✅ Опубликовано</span>`
             : `<span style="font-size:12px;color:var(--warning);font-weight:500;">⏳ Не опубликовано</span>`}
+          ${tgMessageLink(pubInfo)}
           <button class="btn btn-sm ${pubInfo.published ? 'btn-outline' : 'btn-primary'}" onclick="publishWeek('${weekIso}', this)">
             📢 ${pubInfo.published ? 'Обновить расписание' : 'Опубликовать'}
           </button>`;
@@ -750,6 +764,7 @@ async function loadSchedule() {
           ${pubInfo.published
             ? `<span style="font-size:12px;color:var(--success);font-weight:500;">✅ Опубликовано</span>`
             : `<span style="font-size:12px;color:var(--warning);font-weight:500;">⏳ Не опубликовано</span>`}
+          ${tgMessageLink(pubInfo)}
           <button class="btn btn-sm ${pubInfo.published ? 'btn-outline' : 'btn-primary'}" onclick="publishWeek('${weekIso}', this)">
             📢 ${pubInfo.published ? 'Обновить расписание' : 'Опубликовать'}
           </button>`;
