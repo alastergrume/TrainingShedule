@@ -87,6 +87,16 @@ class VKBot(MessengerInterface):
             logger.error(f"Failed to edit VK post: {e}")
             raise
 
+    async def check_post_exists(self, post_id: int) -> bool:
+        try:
+            result = await asyncio.to_thread(
+                self.vk.wall.getById,
+                posts=f"-{self.group_id}_{post_id}",
+            )
+            return bool(result)
+        except Exception:
+            return False
+
     async def send_reminder(self, user_id: str, reminder_data: Dict) -> bool:
         try:
             text = self._format_reminder(reminder_data)

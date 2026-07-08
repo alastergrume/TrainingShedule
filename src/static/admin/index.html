@@ -838,10 +838,12 @@ function renderScheduleGrid(grid, schedule, weekStart) {
       entries.forEach(e => {
         const chip = document.createElement('div');
         chip.className = 'training-chip';
+        const names = (e.bookings || []).map(b => b.user_name).filter(Boolean);
         chip.innerHTML = `
           <div style="font-weight:600;">${e.title || 'Тренировка'}</div>
           <div class="time">${e.time || ''}</div>
-          <div style="font-size:11px;color:var(--muted);">${e.bookings?.length || 0}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>`;
+          <div style="font-size:11px;color:var(--muted);">${e.bookings?.length || 0}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>
+          ${names.length ? `<div style="font-size:11px;margin-top:2px;">${names.join(', ')}</div>` : ''}`;
         chip.onclick = () => promptCancelEntry(e.id);
         chip.title = 'Нажмите чтобы отменить';
         body.appendChild(chip);
@@ -861,10 +863,11 @@ function renderScheduleList(card, allSchedules) {
       const entries = dayData.entries || [];
       if (!entries.length) continue;
       entries.forEach(e => {
+        const names = (e.bookings || []).map(b => b.user_name).filter(Boolean);
         html += `<div class="schedule-list-item">
           <div class="schedule-list-day">${DAYS_FULL[i]}, ${fmtDate(dayDate)}</div>
           <div class="schedule-list-time">${e.time || ''}</div>
-          <div style="flex:1;font-weight:500;">${e.title || 'Тренировка'}</div>
+          <div style="flex:1;font-weight:500;">${e.title || 'Тренировка'}${names.length ? `<div style="font-size:11px;font-weight:400;color:var(--muted);margin-top:2px;">${names.join(', ')}</div>` : ''}</div>
           <span class="badge badge-${e.type}">${typeLabel(e.type)}</span>
           <div style="font-size:12px;color:var(--muted);min-width:60px;text-align:right;">${e.bookings?.length || 0}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>
           <button class="btn btn-danger btn-sm" onclick="promptCancelEntry(${e.id})" title="Отменить">✕</button>
