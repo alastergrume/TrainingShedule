@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Админ-панель — Расписание тренировок</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f6fa;
+    --card: #fff;
+    --primary: #4f46e5;
+    --primary-hover: #4338ca;
+    --danger: #ef4444;
+    --success: #22c55e;
+    --warning: #f59e0b;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --radius: 10px;
+  }
+
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+
+  /* Layout */
+  .sidebar {
+    position: fixed; top: 0; left: 0; width: 220px; height: 100vh;
+    background: var(--card); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; z-index: 100;
+  }
+  .sidebar-logo { padding: 20px; font-size: 15px; font-weight: 700; color: var(--primary); border-bottom: 1px solid var(--border); }
+  .sidebar nav { flex: 1; padding: 12px 8px; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px;
+    border-radius: 8px; cursor: pointer; font-size: 14px; color: var(--muted);
+    transition: all .15s; margin-bottom: 2px; border: none; background: none; width: 100%; text-align: left;
+  }
+  .nav-item:hover { background: var(--bg); color: var(--text); }
+  .nav-item.active { background: #eef2ff; color: var(--primary); font-weight: 600; }
+  .nav-icon { font-size: 18px; width: 24px; text-align: center; }
+
+  .main { margin-left: 220px; padding: 28px; min-height: 100vh; }
+  .page { display: none; }
+  .page.active { display: block; }
+
+  h1 { font-size: 22px; font-weight: 700; margin-bottom: 20px; }
+  h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
+
+  /* Cards */
+  .card { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); padding: 20px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .stat-card { text-align: center; }
+  .stat-num { font-size: 36px; font-weight: 700; color: var(--primary); }
+  .stat-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 500; transition: all .15s;
+  }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: #dc2626; }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-success:hover { background: #16a34a; }
+  .btn-warning { background: var(--warning); color: #fff; }
+  .btn-warning:hover { background: #d97706; }
+  .btn-outline { background: #fff; color: var(--text); border: 1px solid var(--border); }
+  .btn-outline:hover { background: var(--bg); }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; padding: 10px 12px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border-bottom: 2px solid var(--border); }
+  td { padding: 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--bg); }
+
+  /* Badge */
+  .badge { display: inline-block; padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge-pending { background: #fef3c7; color: #92400e; }
+  .badge-confirmed { background: #d1fae5; color: #065f46; }
+  .badge-cancelled { background: #fee2e2; color: #991b1b; }
+  .badge-personal { background: #ede9fe; color: #4c1d95; }
+  .badge-commercial { background: #dbeafe; color: #1e40af; }
+  .badge-basic { background: #d1fae5; color: #065f46; }
+
+  /* Form */
+  .form-group { margin-bottom: 16px; }
+  label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+  input, select, textarea {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px; outline: none; transition: border .15s;
+    background: #fff; color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--primary); }
+  textarea { min-height: 80px; resize: vertical; }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    display: none; align-items: flex-start; justify-content: center; z-index: 200;
+    padding-top: 60px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--card); border-radius: var(--radius); padding: 28px;
+    width: 480px; max-width: 95vw; max-height: 85vh; overflow-y: auto;
+    position: relative;
+  }
+  .modal-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;
+    cursor: grab; user-select: none;
+  }
+  .modal-header:active { cursor: grabbing; }
+  .modal-title { font-size: 17px; font-weight: 700; }
+  .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--muted); }
+  .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* Draggable modal */
+  .modal.dragging { box-shadow: 0 12px 40px rgba(0,0,0,.2); }
+
+  /* Schedule */
+  .week-nav { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .week-nav span { font-size: 15px; font-weight: 600; min-width: 200px; text-align: center; }
+  .schedule-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 16px; }
+  .day-col { background: var(--card); border-radius: var(--radius); border: 1px solid var(--border); overflow: hidden; }
+  .day-header { padding: 10px; text-align: center; background: var(--bg); border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; }
+  .day-header .date { color: var(--muted); font-weight: 400; font-size: 11px; }
+  .day-body { padding: 8px; min-height: 80px; }
+  .training-chip {
+    background: #eef2ff; border-left: 3px solid var(--primary); border-radius: 6px;
+    padding: 6px 8px; margin-bottom: 6px; font-size: 12px; cursor: pointer;
+    transition: background .15s;
+  }
+  .training-chip:hover { background: #e0e7ff; }
+  .training-chip .time { color: var(--muted); font-size: 11px; }
+  .training-chip.cancelled { background: #fee2e2; border-color: var(--danger); opacity: .7; }
+  .empty-day { text-align: center; color: var(--muted); font-size: 12px; padding: 16px 0; }
+
+  /* Schedule list view */
+  .schedule-list { display: none; }
+  .schedule-list.active { display: block; }
+  .schedule-grid-wrap { display: block; }
+  .schedule-grid-wrap.hidden { display: none; }
+  .schedule-list-item {
+    display: flex; align-items: center; gap: 16px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); font-size: 14px;
+  }
+  .schedule-list-item:last-child { border-bottom: none; }
+  .schedule-list-item:hover { background: var(--bg); }
+  .schedule-list-day { font-weight: 600; min-width: 120px; }
+  .schedule-list-time { color: var(--muted); min-width: 100px; }
+
+  /* Actions bar */
+  .actions-bar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+
+  /* Toast */
+  .toast-container { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 999; }
+  .toast { padding: 12px 18px; border-radius: 8px; font-size: 14px; color: #fff; animation: slide-in .2s ease; }
+  .toast-success { background: var(--success); }
+  .toast-error { background: var(--danger); }
+  @keyframes slide-in { from { transform: translateX(60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* Spinner */
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.4); border-top-color: #fff; border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .section-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .text-muted { color: var(--muted); font-size: 13px; }
+
+  /* Participants autocomplete */
+  .participant-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; position: relative; }
+  .participant-row input { flex: 1; }
+  .participant-row .btn-remove { padding: 4px 8px; font-size: 16px; line-height: 1; }
+  .autocomplete-list {
+    position: absolute; top: 100%; left: 0; right: 40px; background: var(--card);
+    border: 1px solid var(--border); border-radius: 8px; max-height: 160px;
+    overflow-y: auto; z-index: 10; box-shadow: 0 4px 12px rgba(0,0,0,.1);
+    display: none;
+  }
+  .autocomplete-list.open { display: block; }
+  .autocomplete-item {
+    padding: 8px 12px; cursor: pointer; font-size: 13px;
+  }
+  .autocomplete-item:hover { background: var(--bg); }
+
+  /* View toggle */
+  .view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .view-toggle button {
+    padding: 6px 14px; border: none; background: #fff; cursor: pointer;
+    font-size: 13px; color: var(--muted); transition: all .15s;
+  }
+  .view-toggle button.active { background: var(--primary); color: #fff; }
+  .view-toggle button:not(:last-child) { border-right: 1px solid var(--border); }
+
+  /* Weeks count setting */
+  .weeks-setting { display: flex; align-items: center; gap: 8px; }
+  .weeks-setting label { margin: 0; font-size: 13px; white-space: nowrap; }
+  .weeks-setting select { width: 60px; padding: 5px 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <div class="sidebar-logo">🏋️ Расписание</div>
+  <nav>
+    <button class="nav-item active" data-page="dashboard" onclick="showPage('dashboard', this)">
+      <span class="nav-icon">📊</span> Дашборд
+    </button>
+    <button class="nav-item" data-page="schedule" onclick="showPage('schedule', this)">
+      <span class="nav-icon">📅</span> Расписание
+    </button>
+    <button class="nav-item" data-page="trainings" onclick="showPage('trainings', this)">
+      <span class="nav-icon">🏃</span> Тренировки
+    </button>
+    <button class="nav-item" data-page="bookings" onclick="showPage('bookings', this)">
+      <span class="nav-icon">📋</span> Бронирования
+    </button>
+    <button class="nav-item" data-page="users" onclick="showPage('users', this)">
+      <span class="nav-icon">👥</span> Пользователи
+    </button>
+  </nav>
+</div>
+
+<div class="main">
+
+  <!-- Dashboard -->
+  <div id="page-dashboard" class="page active">
+    <h1>Дашборд</h1>
+    <div class="stats-grid">
+      <div class="card stat-card">
+        <div class="stat-num" id="stat-users">—</div>
+        <div class="stat-label">Пользователей</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-num" id="stat-bookings">—</div>
+        <div class="stat-label">Бронирований</div>
+      </div>
+      <div class="card stat-card">
+        <div class="stat-num" id="stat-trainings">—</div>
+        <div class="stat-label">Активных тренировок</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Быстрые действия</h2>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;align-items:flex-end;">
+        <button class="btn btn-outline" onclick="showPage('schedule', document.querySelector('[data-page=schedule]'))">📅 Расписание</button>
+        <button class="btn btn-outline" onclick="showPage('bookings', document.querySelector('[data-page=bookings]'))">📋 Ожидающие подтверждения</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Schedule -->
+  <div id="page-schedule" class="page">
+    <h1>Расписание</h1>
+    <div class="week-nav">
+      <button class="btn btn-outline" onclick="changeWeek(-1)">← Назад</button>
+      <span id="week-label">Загрузка...</span>
+      <button class="btn btn-outline" onclick="changeWeek(1)">Вперёд →</button>
+      <button class="btn btn-primary" onclick="loadSchedule()">🔄 Обновить</button>
+      <div class="spacer"></div>
+      <div class="view-toggle">
+        <button class="active" onclick="setScheduleView('calendar', this)">📅 Календарь</button>
+        <button onclick="setScheduleView('list', this)">📋 Список</button>
+      </div>
+      <div class="weeks-setting">
+        <label>Недель:</label>
+        <select id="weeks-count" onchange="loadSchedule()">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3">3</option>
+          <option value="4" selected>4</option>
+        </select>
+      </div>
+    </div>
+    <div id="schedule-container">
+      <div style="text-align:center;padding:40px;color:var(--muted);">Загрузка...</div>
+    </div>
+  </div>
+
+  <!-- Trainings -->
+  <div id="page-trainings" class="page">
+    <div class="section-top">
+      <h1 style="margin:0">Тренировки</h1>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <div class="view-toggle" id="trainings-view-toggle">
+          <button class="active" onclick="setTrainingsView('list', this)">📋 Список</button>
+          <button onclick="setTrainingsView('calendar', this)">📅 Календарь</button>
+        </div>
+        <button class="btn btn-primary" onclick="openTrainingModal()">+ Добавить</button>
+      </div>
+    </div>
+    <div id="trainings-list-view" class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>Название</th>
+            <th>Тип</th>
+            <th>День</th>
+            <th>Время</th>
+            <th>Длит.</th>
+            <th>Макс.</th>
+            <th>Участники</th>
+            <th>Статус</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="trainings-body">
+          <tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px;">Загрузка...</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div id="trainings-calendar-view" style="display:none;">
+      <div class="schedule-grid" id="trainings-calendar-grid"></div>
+    </div>
+
+    <div class="card" style="margin-top:16px;">
+      <h2>Генерация расписания</h2>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+        <div>
+          <label style="font-size:12px;margin-bottom:4px;">Неделя</label>
+          <input type="date" id="generate-week-start" style="width:170px;">
+        </div>
+        <button class="btn btn-primary" onclick="generateSchedule()">⚡ Сгенерировать расписание</button>
+      </div>
+      <div id="generate-result" style="margin-top:12px;font-size:14px;color:var(--muted);"></div>
+    </div>
+  </div>
+
+  <!-- Bookings -->
+  <div id="page-bookings" class="page">
+    <div class="section-top">
+      <h1 style="margin:0">Бронирования</h1>
+      <button class="btn btn-outline" onclick="loadBookings()">🔄 Обновить</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Пользователь</th>
+            <th>Тренировка</th>
+            <th>Статус</th>
+            <th>Оплата</th>
+            <th>Действия</th>
+          </tr>
+        </thead>
+        <tbody id="bookings-body">
+          <tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px;">Загрузка...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Users -->
+  <div id="page-users" class="page">
+    <div class="section-top">
+      <h1 style="margin:0">Пользователи</h1>
+      <button class="btn btn-outline" onclick="loadUsers()">🔄 Обновить</button>
+    </div>
+    <div class="card">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Имя</th>
+            <th>Telegram</th>
+            <th>VK</th>
+            <th>Email</th>
+            <th>Админ</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="users-body">
+          <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:40px;">Загрузка...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Training Modal -->
+<div class="modal-overlay" id="training-modal">
+  <div class="modal" id="training-modal-box">
+    <div class="modal-header" id="training-modal-drag">
+      <span class="modal-title" id="training-modal-title">Добавить тренировку</span>
+      <button class="modal-close" onclick="closeModal('training-modal')">×</button>
+    </div>
+    <form id="training-form" onsubmit="saveTraining(event)">
+      <input type="hidden" id="training-id">
+
+      <!-- 1. Тип + День недели -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label>Тип</label>
+          <select id="t-type" required onchange="onTrainingTypeChange()">
+            <option value="personal">Персональная</option>
+            <option value="commercial">Коммерческая</option>
+            <option value="basic">Базовая</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>День недели</label>
+          <select id="t-day" required>
+            <option value="0">Понедельник</option>
+            <option value="1">Вторник</option>
+            <option value="2">Среда</option>
+            <option value="3">Четверг</option>
+            <option value="4">Пятница</option>
+            <option value="5">Суббота</option>
+            <option value="6">Воскресенье</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- 2. Время + Длительность + Макс. + Активная -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+          <label>Время начала</label>
+          <input type="time" id="t-start-time" required>
+        </div>
+        <div class="form-group">
+          <label>Длительность (мин)</label>
+          <input type="number" id="t-duration" value="60" min="15" max="300">
+        </div>
+        <div class="form-group">
+          <label>Макс. участников</label>
+          <input type="number" id="t-max" placeholder="Без ограничений" min="1">
+        </div>
+      </div>
+
+      <!-- 3. Название -->
+      <div class="form-group">
+        <label>Название</label>
+        <input type="text" id="t-title" required placeholder="Название тренировки">
+      </div>
+
+      <!-- 4. Участники -->
+      <div class="form-group" id="participants-section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <label style="margin:0;">Участники</label>
+          <button type="button" class="btn btn-outline btn-sm" onclick="addParticipantRow()">+ Добавить</button>
+        </div>
+        <div id="participants-limit-msg" style="display:none;color:var(--warning);font-size:12px;margin-bottom:8px;"></div>
+        <div id="participants-container"></div>
+      </div>
+
+      <!-- 5. Описание -->
+      <div class="form-group">
+        <label>Описание</label>
+        <textarea id="t-description" placeholder="Необязательно"></textarea>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline" onclick="closeModal('training-modal')">Отмена</button>
+        <button type="submit" class="btn btn-primary" id="training-save-btn">Сохранить</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Cancel Entry Modal -->
+<div class="modal-overlay" id="cancel-modal">
+  <div class="modal" style="width:380px;">
+    <div class="modal-header">
+      <span class="modal-title">Отменить занятие</span>
+      <button class="modal-close" onclick="closeModal('cancel-modal')">×</button>
+    </div>
+    <div class="form-group">
+      <label>Причина отмены</label>
+      <textarea id="cancel-reason" placeholder="Тренер заболел..." required></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('cancel-modal')">Назад</button>
+      <button class="btn btn-danger" onclick="confirmCancel()">Отменить занятие</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reject Booking Modal -->
+<div class="modal-overlay" id="reject-modal">
+  <div class="modal" style="width:380px;">
+    <div class="modal-header">
+      <span class="modal-title">Отклонить бронирование</span>
+      <button class="modal-close" onclick="closeModal('reject-modal')">×</button>
+    </div>
+    <div class="form-group">
+      <label>Причина</label>
+      <textarea id="reject-reason" placeholder="Место занято..." required></textarea>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('reject-modal')">Назад</button>
+      <button class="btn btn-danger" onclick="confirmReject()">Отклонить</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast-container" id="toasts"></div>
+
+<script>
+const API = '';
+const DAYS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+const DAYS_FULL = ['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота','Воскресенье'];
+
+// ---- Navigation ----
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + name).classList.add('active');
+  if (btn) btn.classList.add('active');
+
+  if (name === 'dashboard') loadStats();
+  if (name === 'schedule') loadSchedule();
+  if (name === 'trainings') loadTrainings();
+  if (name === 'bookings') loadBookings();
+  if (name === 'users') loadUsers();
+}
+
+// ---- Toast ----
+function toast(msg, type = 'success') {
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// ---- API helper ----
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ detail: r.statusText }));
+    throw new Error(err.detail || r.statusText);
+  }
+  return r.json();
+}
+
+// ---- Modal ----
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) {
+  document.getElementById(id).classList.remove('open');
+  const modal = document.getElementById(id).querySelector('.modal');
+  if (modal) { modal.style.transform = ''; }
+}
+
+// ---- Draggable modals ----
+(function() {
+  let dragTarget = null, startX, startY, origX, origY;
+
+  document.addEventListener('mousedown', function(e) {
+    const header = e.target.closest('.modal-header');
+    if (!header || e.target.closest('.modal-close')) return;
+    const modal = header.closest('.modal');
+    if (!modal) return;
+    dragTarget = modal;
+    const rect = modal.getBoundingClientRect();
+    startX = e.clientX; startY = e.clientY;
+    origX = rect.left; origY = rect.top;
+    modal.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragTarget) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    dragTarget.style.position = 'fixed';
+    dragTarget.style.left = (origX + dx) + 'px';
+    dragTarget.style.top = (origY + dy) + 'px';
+    dragTarget.style.margin = '0';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (dragTarget) { dragTarget.classList.remove('dragging'); dragTarget = null; }
+  });
+})();
+
+// ---- Dashboard ----
+async function loadStats() {
+  try {
+    const data = await api('GET', '/api/admin/stats');
+    document.getElementById('stat-users').textContent = data.total_users;
+    document.getElementById('stat-bookings').textContent = data.total_bookings;
+    document.getElementById('stat-trainings').textContent = data.active_trainings;
+  } catch(e) { toast('Ошибка загрузки статистики: ' + e.message, 'error'); }
+}
+
+async function generateSchedule() {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Генерация...';
+  const el = document.getElementById('generate-result');
+
+  const weekInput = document.getElementById('generate-week-start').value;
+  let url = '/api/admin/schedule/generate';
+  if (weekInput) url += '?week_start=' + weekInput;
+
+  try {
+    const data = await api('POST', url);
+    el.innerHTML = `✅ ${data.message} (неделя: ${data.week_start})`;
+    toast('Расписание сгенерировано');
+  } catch(e) {
+    el.innerHTML = `❌ ${e.message}`;
+    toast('Ошибка: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '⚡ Сгенерировать расписание';
+  }
+}
+
+async function publishSchedule() {
+  const btn = event.currentTarget;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    const data = await api('POST', '/api/admin/schedule/publish');
+    toast('Публикация запущена');
+    document.getElementById('generate-result').innerHTML = '📢 ' + data.message;
+  } catch(e) {
+    toast('Ошибка публикации: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '📢 Опубликовать расписание';
+  }
+}
+
+// ---- Set default generate week to next Monday ----
+(function() {
+  const d = new Date();
+  const daysAhead = ((8 - d.getDay()) % 7) || 7;
+  const nextMon = new Date(d);
+  nextMon.setDate(d.getDate() + daysAhead);
+  document.getElementById('generate-week-start').value = toLocalIso(nextMon);
+})();
+
+// ---- Schedule ----
+let currentWeekStart = getThisMonday();
+let scheduleViewMode = 'calendar';
+
+function getThisMonday() {
+  const d = new Date();
+  d.setHours(0,0,0,0);
+  d.setDate(d.getDate() - d.getDay() + (d.getDay() === 0 ? -6 : 1));
+  return d;
+}
+
+function fmtDate(d) {
+  return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit' });
+}
+
+function tgMessageLink(pubInfo) {
+  if (!pubInfo.telegram_message_id || !pubInfo.telegram_channel_id) return '';
+  const ch = pubInfo.telegram_channel_id;
+  let link;
+  if (ch.startsWith('@')) {
+    link = `https://t.me/${ch.slice(1)}/${pubInfo.telegram_message_id}`;
+  } else {
+    const numId = ch.replace(/^-100/, '');
+    link = `https://t.me/c/${numId}/${pubInfo.telegram_message_id}`;
+  }
+  return `<a href="${link}" target="_blank" style="font-size:12px;color:var(--primary);">TG #${pubInfo.telegram_message_id}</a>`;
+}
+
+function toLocalIso(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function changeWeek(dir) {
+  const weeksCount = parseInt(document.getElementById('weeks-count').value) || 1;
+  currentWeekStart = new Date(currentWeekStart);
+  currentWeekStart.setDate(currentWeekStart.getDate() + dir * 7 * weeksCount);
+  loadSchedule();
+}
+
+function setScheduleView(mode, btn) {
+  scheduleViewMode = mode;
+  document.querySelectorAll('.view-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  loadSchedule();
+}
+
+async function loadSchedule() {
+  const container = document.getElementById('schedule-container');
+  container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted);">Загрузка...</div>';
+
+  const weeksCount = parseInt(document.getElementById('weeks-count').value) || 1;
+
+  const lastWeekStart = new Date(currentWeekStart);
+  lastWeekStart.setDate(lastWeekStart.getDate() + (weeksCount - 1) * 7);
+  const lastWeekEnd = new Date(lastWeekStart);
+  lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
+
+  document.getElementById('week-label').textContent =
+    fmtDate(currentWeekStart) + ' — ' + fmtDate(lastWeekEnd);
+
+  try {
+    let allSchedules = [];
+    const weekIsos = [];
+    for (let w = 0; w < weeksCount; w++) {
+      const weekStart = new Date(currentWeekStart);
+      weekStart.setDate(weekStart.getDate() + w * 7);
+      const weekIso = toLocalIso(weekStart);
+      weekIsos.push(weekIso);
+      const data = await api('GET', `/api/schedule/week?week_start=${weekIso}`);
+      allSchedules.push({ weekStart, weekIso, schedule: data.schedule });
+    }
+
+    // Load publish statuses
+    let publishStatuses = {};
+    try {
+      publishStatuses = await api('GET', `/api/admin/schedule/publish-status?week_starts=${weekIsos.join(',')}`);
+    } catch(e) {}
+
+    container.innerHTML = '';
+
+    if (scheduleViewMode === 'calendar') {
+      for (const { weekStart, weekIso, schedule } of allSchedules) {
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        const pubInfo = publishStatuses[weekIso] || {};
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;';
+        header.innerHTML = `
+          <span style="font-size:14px;font-weight:600;color:var(--muted);">${fmtDate(weekStart)} — ${fmtDate(weekEnd)}</span>
+          ${pubInfo.published
+            ? `<span style="font-size:12px;color:var(--success);font-weight:500;">✅ Опубликовано</span>`
+            : `<span style="font-size:12px;color:var(--warning);font-weight:500;">⏳ Не опубликовано</span>`}
+          ${tgMessageLink(pubInfo)}
+          <button class="btn btn-sm ${pubInfo.published ? 'btn-outline' : 'btn-primary'}" onclick="publishWeek('${weekIso}', this)">
+            📢 ${pubInfo.published ? 'Обновить расписание' : 'Опубликовать'}
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="clearWeek('${weekIso}', this)" title="Удалить все тренировки и сообщения за эту неделю">🗑 Очистить неделю</button>`;
+        container.appendChild(header);
+
+        const grid = document.createElement('div');
+        grid.className = 'schedule-grid';
+        grid.style.marginBottom = '20px';
+        container.appendChild(grid);
+        renderScheduleGrid(grid, schedule, weekStart);
+      }
+    } else {
+      for (const { weekStart, weekIso, schedule } of allSchedules) {
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekEnd.getDate() + 6);
+        const pubInfo = publishStatuses[weekIso] || {};
+
+        const header = document.createElement('div');
+        header.style.cssText = 'display:flex;align-items:center;gap:12px;margin-bottom:8px;flex-wrap:wrap;';
+        header.innerHTML = `
+          <span style="font-size:14px;font-weight:600;color:var(--muted);">${fmtDate(weekStart)} — ${fmtDate(weekEnd)}</span>
+          ${pubInfo.published
+            ? `<span style="font-size:12px;color:var(--success);font-weight:500;">✅ Опубликовано</span>`
+            : `<span style="font-size:12px;color:var(--warning);font-weight:500;">⏳ Не опубликовано</span>`}
+          ${tgMessageLink(pubInfo)}
+          <button class="btn btn-sm ${pubInfo.published ? 'btn-outline' : 'btn-primary'}" onclick="publishWeek('${weekIso}', this)">
+            📢 ${pubInfo.published ? 'Обновить расписание' : 'Опубликовать'}
+          </button>
+          <button class="btn btn-sm btn-danger" onclick="clearWeek('${weekIso}', this)" title="Удалить все тренировки и сообщения за эту неделю">🗑 Очистить неделю</button>`;
+        container.appendChild(header);
+
+        const card = document.createElement('div');
+        card.className = 'card';
+        card.style.marginBottom = '20px';
+        container.appendChild(card);
+        renderScheduleList(card, [{ weekStart, schedule }]);
+      }
+    }
+  } catch(e) {
+    container.innerHTML = `<div style="text-align:center;padding:40px;color:var(--danger);">Ошибка: ${e.message}</div>`;
+  }
+}
+
+async function publishWeek(weekIso, btn) {
+  const isUpdate = btn.textContent.trim().includes('Обновить');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    if (isUpdate) {
+      const check = await api('GET', `/api/admin/schedule/check-message?week_start=${weekIso}`);
+      if (!check.exists) {
+        toast('Сообщение удалено из канала. Нажмите «Опубликовать» для новой публикации.', 'warning');
+        btn.disabled = false;
+        btn.className = 'btn btn-sm btn-primary';
+        btn.innerHTML = '📢 Опубликовать';
+        const statusSpan = btn.parentElement.querySelector('span[style*="color"]');
+        if (statusSpan) {
+          statusSpan.style.color = 'var(--warning)';
+          statusSpan.textContent = '⏳ Сообщение удалено';
+        }
+        return;
+      }
+    }
+    await api('POST', `/api/admin/schedule/publish?week_start=${weekIso}`);
+    toast(isUpdate ? 'Расписание обновлено' : 'Публикация запущена');
+    loadSchedule();
+  } catch(e) {
+    toast('Ошибка публикации: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = isUpdate ? '📢 Обновить расписание' : '📢 Опубликовать';
+  }
+}
+
+async function clearWeek(weekIso, btn) {
+  if (!confirm(`Очистить неделю ${weekIso}?\n\nБудут удалены все тренировки, записи и опубликованные сообщения за эту неделю.`)) return;
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
+  try {
+    await api('DELETE', `/api/admin/schedule/week?week_start=${weekIso}`);
+    toast('Неделя очищена');
+    loadSchedule();
+  } catch(e) {
+    toast('Ошибка: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '🗑 Очистить неделю';
+  }
+}
+
+function renderScheduleGrid(grid, schedule, weekStart) {
+  const days = schedule || [];
+
+  for (let i = 0; i < 7; i++) {
+    const dayData = days[i] || {};
+    const dayDate = new Date(weekStart);
+    dayDate.setDate(dayDate.getDate() + i);
+    const col = document.createElement('div');
+    col.className = 'day-col';
+    const isToday = dayDate.toDateString() === new Date().toDateString();
+    col.innerHTML = `
+      <div class="day-header" style="${isToday ? 'background:#eef2ff;color:var(--primary);' : ''}">
+        <div>${DAYS[i]}</div>
+        <div class="date">${fmtDate(dayDate)}</div>
+      </div>
+      <div class="day-body"></div>`;
+    grid.appendChild(col);
+
+    const body = col.querySelector('.day-body');
+    const entries = dayData.entries || [];
+    if (!entries.length) {
+      body.innerHTML = '<div class="empty-day">—</div>';
+    } else {
+      entries.forEach(e => {
+        const chip = document.createElement('div');
+        chip.className = 'training-chip';
+        const names = (e.bookings || []).map(b => b.user_name).filter(Boolean);
+        chip.innerHTML = `
+          <div style="font-weight:600;">${e.title || 'Тренировка'}</div>
+          <div class="time">${e.time || ''}</div>
+          <div style="font-size:11px;color:var(--muted);">${e.bookings?.length || 0}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>
+          ${names.length ? `<div style="font-size:11px;margin-top:2px;">${names.join(', ')}</div>` : ''}`;
+        chip.onclick = () => promptCancelEntry(e.id);
+        chip.title = 'Нажмите чтобы отменить';
+        body.appendChild(chip);
+      });
+    }
+  }
+}
+
+function renderScheduleList(card, allSchedules) {
+  let html = '';
+  for (const { weekStart, schedule } of allSchedules) {
+    const days = schedule || [];
+    for (let i = 0; i < 7; i++) {
+      const dayData = days[i] || {};
+      const dayDate = new Date(weekStart);
+      dayDate.setDate(dayDate.getDate() + i);
+      const entries = dayData.entries || [];
+      if (!entries.length) continue;
+      entries.forEach(e => {
+        const names = (e.bookings || []).map(b => b.user_name).filter(Boolean);
+        html += `<div class="schedule-list-item">
+          <div class="schedule-list-day">${DAYS_FULL[i]}, ${fmtDate(dayDate)}</div>
+          <div class="schedule-list-time">${e.time || ''}</div>
+          <div style="flex:1;font-weight:500;">${e.title || 'Тренировка'}${names.length ? `<div style="font-size:11px;font-weight:400;color:var(--muted);margin-top:2px;">${names.join(', ')}</div>` : ''}</div>
+          <span class="badge badge-${e.type}">${typeLabel(e.type)}</span>
+          <div style="font-size:12px;color:var(--muted);min-width:60px;text-align:right;">${e.bookings?.length || 0}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>
+          <button class="btn btn-danger btn-sm" onclick="promptCancelEntry(${e.id})" title="Отменить">✕</button>
+        </div>`;
+      });
+    }
+  }
+  if (!html) html = '<div style="text-align:center;padding:40px;color:var(--muted);">Нет занятий</div>';
+  card.innerHTML = html;
+}
+
+let cancelEntryId = null;
+function promptCancelEntry(id) {
+  cancelEntryId = id;
+  document.getElementById('cancel-reason').value = '';
+  openModal('cancel-modal');
+}
+async function confirmCancel() {
+  const reason = document.getElementById('cancel-reason').value.trim();
+  if (!reason) { toast('Укажите причину', 'error'); return; }
+  try {
+    await api('POST', `/api/admin/schedule-entries/${cancelEntryId}/cancel?reason=${encodeURIComponent(reason)}`);
+    closeModal('cancel-modal');
+    toast('Занятие отменено');
+    loadSchedule();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+// ---- Trainings ----
+let trainingsData = [];
+let trainingsViewMode = 'list';
+
+function setTrainingsView(mode, btn) {
+  trainingsViewMode = mode;
+  document.querySelectorAll('#trainings-view-toggle button').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  document.getElementById('trainings-list-view').style.display = mode === 'list' ? '' : 'none';
+  document.getElementById('trainings-calendar-view').style.display = mode === 'calendar' ? '' : 'none';
+
+  if (mode === 'calendar') renderTrainingsCalendar();
+}
+
+async function loadTrainings() {
+  try {
+    const data = await api('GET', '/api/admin/trainings?include_inactive=true');
+    trainingsData = data.trainings || [];
+    renderTrainings();
+    if (trainingsViewMode === 'calendar') renderTrainingsCalendar();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+function renderTrainings() {
+  const tbody = document.getElementById('trainings-body');
+  if (!trainingsData.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:40px;">Нет тренировок</td></tr>';
+    return;
+  }
+  tbody.innerHTML = trainingsData.map(t => {
+    const pNames = (t.participants || []).map(p => `${p.first_name} ${p.last_name || ''}`.trim()).join(', ');
+    return `
+    <tr>
+      <td><strong>${t.title}</strong>${t.description ? `<div class="text-muted" style="font-size:12px;">${t.description}</div>` : ''}</td>
+      <td><span class="badge badge-${t.training_type}">${typeLabel(t.training_type)}</span></td>
+      <td>${DAYS_FULL[t.day_of_week]}</td>
+      <td>${t.start_time}</td>
+      <td>${t.duration_minutes} мин</td>
+      <td>${t.max_participants ?? '∞'}</td>
+      <td style="max-width:150px;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${pNames}">${pNames || '—'}</td>
+      <td><span style="color:${t.is_active ? 'var(--success)' : 'var(--danger)'};">${t.is_active ? '● Активна' : '● Неактивна'}</span></td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-outline btn-sm" onclick="copyTraining(${t.id})" title="Копировать">📋</button>
+        <button class="btn btn-outline btn-sm" onclick="openTrainingModal(${t.id})" title="Редактировать">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteTraining(${t.id})" title="Удалить">🗑</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderTrainingsCalendar() {
+  const grid = document.getElementById('trainings-calendar-grid');
+  grid.innerHTML = '';
+
+  const byDay = {};
+  for (let i = 0; i < 7; i++) byDay[i] = [];
+  trainingsData.forEach(t => {
+    if (byDay[t.day_of_week]) byDay[t.day_of_week].push(t);
+  });
+
+  for (let i = 0; i < 7; i++) {
+    const col = document.createElement('div');
+    col.className = 'day-col';
+    col.innerHTML = `
+      <div class="day-header">
+        <div>${DAYS[i]}</div>
+        <div class="date">${DAYS_FULL[i]}</div>
+      </div>
+      <div class="day-body"></div>`;
+    grid.appendChild(col);
+
+    const body = col.querySelector('.day-body');
+    const dayTrainings = byDay[i].sort((a, b) => a.start_time.localeCompare(b.start_time));
+
+    if (!dayTrainings.length) {
+      body.innerHTML = '<div class="empty-day">—</div>';
+    } else {
+      dayTrainings.forEach(t => {
+        const pNames = (t.participants || []).map(p => `${p.first_name} ${p.last_name || ''}`.trim()).join(', ');
+        const chip = document.createElement('div');
+        chip.className = 'training-chip';
+        if (!t.is_active) chip.classList.add('cancelled');
+        chip.innerHTML = `
+          <div style="font-weight:600;">${t.title}</div>
+          <div class="time">${t.start_time} · ${t.duration_minutes} мин</div>
+          <div><span class="badge badge-${t.training_type}" style="font-size:10px;">${typeLabel(t.training_type)}</span></div>
+          ${pNames ? `<div style="font-size:11px;color:var(--muted);margin-top:2px;">${pNames}</div>` : ''}`;
+        chip.style.cursor = 'pointer';
+        chip.onclick = () => openTrainingModal(t.id);
+        chip.title = 'Нажмите для редактирования';
+        body.appendChild(chip);
+      });
+    }
+  }
+}
+
+function typeLabel(t) {
+  return { personal: 'Персональная', commercial: 'Коммерческая', basic: 'Базовая' }[t] || t;
+}
+
+// ---- Training Modal ----
+let modalParticipants = []; // [{id, name}] — id=null for new text entries
+
+function openTrainingModal(id) {
+  const modal = document.getElementById('training-modal-box');
+  modal.style.position = '';
+  modal.style.left = '';
+  modal.style.top = '';
+  modal.style.margin = '';
+
+  document.getElementById('training-modal-title').textContent = id ? 'Редактировать тренировку' : 'Добавить тренировку';
+  document.getElementById('training-id').value = id || '';
+  modalParticipants = [];
+
+  if (id) {
+    const t = trainingsData.find(x => x.id == id);
+    if (t) {
+      document.getElementById('t-title').value = t.title;
+      document.getElementById('t-description').value = t.description || '';
+      document.getElementById('t-type').value = t.training_type;
+      document.getElementById('t-day').value = t.day_of_week;
+      document.getElementById('t-start-time').value = t.start_time;
+      document.getElementById('t-duration').value = t.duration_minutes;
+      document.getElementById('t-max').value = t.max_participants || '';
+
+      modalParticipants = (t.participants || []).map(p => ({
+        id: p.id,
+        name: `${p.first_name} ${p.last_name || ''}`.trim()
+      }));
+    }
+  } else {
+    document.getElementById('training-form').reset();
+
+    document.getElementById('t-duration').value = 60;
+  }
+
+  renderParticipantRows();
+  onTrainingTypeChange();
+  openModal('training-modal');
+}
+
+function copyTraining(id) {
+  const t = trainingsData.find(x => x.id == id);
+  if (!t) return;
+
+  const modal = document.getElementById('training-modal-box');
+  modal.style.position = '';
+  modal.style.left = '';
+  modal.style.top = '';
+  modal.style.margin = '';
+
+  document.getElementById('training-modal-title').textContent = 'Добавить тренировку (копия)';
+  document.getElementById('training-id').value = '';
+  document.getElementById('t-title').value = t.title;
+  document.getElementById('t-description').value = t.description || '';
+  document.getElementById('t-type').value = t.training_type;
+  document.getElementById('t-day').value = t.day_of_week;
+  document.getElementById('t-start-time').value = t.start_time;
+  document.getElementById('t-duration').value = t.duration_minutes;
+  document.getElementById('t-max').value = t.max_participants || '';
+  document.getElementById('t-active').checked = t.is_active;
+
+  modalParticipants = (t.participants || []).map(p => ({
+    id: p.id,
+    name: `${p.first_name} ${p.last_name || ''}`.trim()
+  }));
+
+  renderParticipantRows();
+  onTrainingTypeChange();
+  openModal('training-modal');
+}
+
+function onTrainingTypeChange() {
+  document.getElementById('participants-section').style.display = '';
+  checkParticipantsLimit();
+
+  const titleInput = document.getElementById('t-title');
+  const type = document.getElementById('t-type').value;
+  const defaults = { personal: 'Персональная тренировка', commercial: 'Коммерческая тренировка', basic: 'Базовая тренировка' };
+  const isDefault = !titleInput.value || Object.values(defaults).includes(titleInput.value);
+  if (isDefault) {
+    titleInput.value = defaults[type] || '';
+  }
+}
+
+function checkParticipantsLimit() {
+  const max = parseInt(document.getElementById('t-max').value) || 0;
+  const msgEl = document.getElementById('participants-limit-msg');
+  if (max > 0 && modalParticipants.length > max) {
+    msgEl.textContent = `Превышен лимит участников (макс. ${max})`;
+    msgEl.style.display = '';
+  } else {
+    msgEl.style.display = 'none';
+  }
+}
+
+function addParticipantRow() {
+  const max = parseInt(document.getElementById('t-max').value) || 0;
+  if (max > 0 && modalParticipants.length >= max) {
+    toast('Превышен лимит участников (макс. ' + max + ')', 'error');
+    return;
+  }
+  modalParticipants.push({ id: null, name: '' });
+  renderParticipantRows();
+  const inputs = document.querySelectorAll('#participants-container .participant-input');
+  if (inputs.length) inputs[inputs.length - 1].focus();
+}
+
+function removeParticipant(idx) {
+  modalParticipants.splice(idx, 1);
+  renderParticipantRows();
+}
+
+function renderParticipantRows() {
+  const container = document.getElementById('participants-container');
+  container.innerHTML = '';
+  modalParticipants.forEach((p, idx) => {
+    const row = document.createElement('div');
+    row.className = 'participant-row';
+    row.innerHTML = `
+      <input type="text" class="participant-input" value="${escHtml(p.name)}"
+             placeholder="Имя участника" data-idx="${idx}"
+             data-user-id="${p.id || ''}"
+             onfocus="showAutocomplete(this)" oninput="onParticipantInput(this)">
+      <div class="autocomplete-list" id="ac-${idx}"></div>
+      <button type="button" class="btn btn-danger btn-sm btn-remove" onclick="removeParticipant(${idx})">✕</button>`;
+    container.appendChild(row);
+  });
+  checkParticipantsLimit();
+}
+
+function escHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str || '';
+  return d.innerHTML;
+}
+
+let acDebounce = null;
+function onParticipantInput(input) {
+  const idx = input.dataset.idx;
+  modalParticipants[idx].name = input.value;
+  modalParticipants[idx].id = null;
+
+  clearTimeout(acDebounce);
+  acDebounce = setTimeout(() => fetchAutocomplete(input), 200);
+}
+
+async function showAutocomplete(input) {
+  fetchAutocomplete(input);
+}
+
+async function fetchAutocomplete(input) {
+  const idx = input.dataset.idx;
+  const q = input.value.trim();
+  const list = document.getElementById('ac-' + idx);
+
+  try {
+    const data = await api('GET', '/api/admin/users/search?q=' + encodeURIComponent(q));
+    const users = data.users || [];
+    if (!users.length) { list.classList.remove('open'); return; }
+
+    list.innerHTML = users.map(u => {
+      const name = `${u.first_name} ${u.last_name || ''}`.trim();
+      return `<div class="autocomplete-item" onmousedown="selectParticipant(${idx}, ${u.id}, '${escHtml(name)}')">${name}</div>`;
+    }).join('');
+    list.classList.add('open');
+  } catch(e) {
+    list.classList.remove('open');
+  }
+
+  input.addEventListener('blur', () => {
+    setTimeout(() => list.classList.remove('open'), 150);
+  }, { once: true });
+}
+
+function selectParticipant(idx, userId, name) {
+  modalParticipants[idx] = { id: userId, name };
+  renderParticipantRows();
+}
+
+async function saveTraining(e) {
+  e.preventDefault();
+  const id = document.getElementById('training-id').value;
+  const btn = document.getElementById('training-save-btn');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
+
+  // Resolve participants: create new users if needed
+  const participantIds = [];
+  for (const p of modalParticipants) {
+    if (!p.name.trim()) continue;
+    if (p.id) {
+      participantIds.push(p.id);
+    } else {
+      try {
+        const parts = p.name.trim().split(/\s+/);
+        const firstName = parts[0];
+        const lastName = parts.slice(1).join(' ') || null;
+        const newUser = await api('POST', '/api/admin/users', { first_name: firstName, last_name: lastName });
+        participantIds.push(newUser.id);
+      } catch(err) {
+        toast('Ошибка создания пользователя: ' + err.message, 'error');
+      }
+    }
+  }
+
+  const body = {
+    title: document.getElementById('t-title').value,
+    description: document.getElementById('t-description').value || null,
+    training_type: document.getElementById('t-type').value,
+    day_of_week: parseInt(document.getElementById('t-day').value),
+    start_time: document.getElementById('t-start-time').value,
+    duration_minutes: parseInt(document.getElementById('t-duration').value),
+    max_participants: document.getElementById('t-max').value ? parseInt(document.getElementById('t-max').value) : null,
+    is_active: true,
+    participant_ids: participantIds,
+  };
+
+  try {
+    if (id) {
+      await api('PUT', `/api/admin/trainings/${id}`, body);
+      toast('Тренировка обновлена');
+    } else {
+      await api('POST', '/api/admin/trainings', body);
+      toast('Тренировка добавлена');
+    }
+    closeModal('training-modal');
+    loadTrainings();
+  } catch(err) {
+    toast('Ошибка: ' + err.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Сохранить';
+  }
+}
+
+async function deleteTraining(id) {
+  if (!confirm('Удалить тренировку?')) return;
+  try {
+    await api('DELETE', `/api/admin/trainings/${id}`);
+    toast('Тренировка удалена');
+    loadTrainings();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+// ---- Bookings ----
+async function loadBookings() {
+  try {
+    const data = await api('GET', '/api/admin/bookings/pending');
+    renderBookings(data.bookings || []);
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+function renderBookings(bookings) {
+  const tbody = document.getElementById('bookings-body');
+  if (!bookings.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px;">Нет ожидающих бронирований</td></tr>';
+    return;
+  }
+  tbody.innerHTML = bookings.map(b => `
+    <tr>
+      <td>#${b.id}</td>
+      <td>${b.user?.first_name || ''} ${b.user?.last_name || ''}<div class="text-muted">${b.user?.username ? '@'+b.user.username : ''}</div></td>
+      <td>${b.training?.title || '—'}</td>
+      <td><span class="badge badge-${b.status}">${statusLabel(b.status)}</span></td>
+      <td>
+        <button class="btn btn-sm ${b.payment?.is_paid ? 'btn-success' : 'btn-outline'}" onclick="togglePayment(${b.id}, ${!b.payment?.is_paid})">
+          ${b.payment?.is_paid ? '✅ Оплачено' : '💰 Не оплачено'}
+        </button>
+      </td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+        ${b.status === 'pending' ? `
+          <button class="btn btn-success btn-sm" onclick="confirmBooking(${b.id})">✓ Подтвердить</button>
+          <button class="btn btn-danger btn-sm" onclick="promptReject(${b.id})">✗ Отклонить</button>
+        ` : ''}
+      </td>
+    </tr>`).join('');
+}
+
+function statusLabel(s) {
+  return { pending:'Ожидает', confirmed:'Подтверждено', cancelled:'Отменено', attended:'Посетил' }[s] || s;
+}
+
+async function confirmBooking(id) {
+  try {
+    await api('POST', `/api/admin/bookings/${id}/confirm`);
+    toast('Бронирование подтверждено');
+    loadBookings();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+let rejectBookingId = null;
+function promptReject(id) {
+  rejectBookingId = id;
+  document.getElementById('reject-reason').value = '';
+  openModal('reject-modal');
+}
+async function confirmReject() {
+  const reason = document.getElementById('reject-reason').value.trim();
+  if (!reason) { toast('Укажите причину', 'error'); return; }
+  try {
+    await api('POST', `/api/admin/bookings/${rejectBookingId}/reject?reason=${encodeURIComponent(reason)}`);
+    closeModal('reject-modal');
+    toast('Бронирование отклонено');
+    loadBookings();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+async function togglePayment(bookingId, isPaid) {
+  try {
+    await api('PUT', `/api/admin/bookings/${bookingId}/payment?is_paid=${isPaid}`);
+    toast(isPaid ? 'Оплата отмечена' : 'Оплата снята');
+    loadBookings();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+// ---- Users ----
+async function loadUsers() {
+  try {
+    const data = await api('GET', '/api/admin/users');
+    renderUsers(data.users || []);
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+function renderUsers(users) {
+  const tbody = document.getElementById('users-body');
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:40px;">Нет пользователей</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td>${u.id}</td>
+      <td><strong>${u.first_name || ''} ${u.last_name || ''}</strong></td>
+      <td>${u.telegram_id ? '@' + (u.username || u.telegram_id) : '—'}</td>
+      <td>${u.vk_id || '—'}</td>
+      <td>${u.email || '—'}</td>
+      <td><span style="color:${u.is_admin ? 'var(--primary)' : 'var(--muted)'};">${u.is_admin ? '★ Да' : 'Нет'}</span></td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="toggleAdmin(${u.id}, ${!u.is_admin})">
+          ${u.is_admin ? 'Снять права' : 'Сделать админом'}
+        </button>
+      </td>
+    </tr>`).join('');
+}
+
+async function toggleAdmin(userId, isAdmin) {
+  if (!confirm(isAdmin ? 'Сделать пользователя админом?' : 'Снять права администратора?')) return;
+  try {
+    await api('PUT', `/api/admin/users/${userId}/admin-status?is_admin=${isAdmin}`);
+    toast('Права обновлены');
+    loadUsers();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+// ---- Init ----
+loadStats();
+</script>
+</body>
+</html>

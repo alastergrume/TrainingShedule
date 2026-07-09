@@ -2,6 +2,7 @@ from .base import Base, engine, SessionLocal, get_db
 from .models import (
     User,
     Training,
+    TrainingParticipant,
     ScheduleEntry,
     Booking,
     Payment,
@@ -18,6 +19,7 @@ __all__ = [
     "get_db",
     "User",
     "Training",
+    "TrainingParticipant",
     "ScheduleEntry",
     "Booking",
     "Payment",

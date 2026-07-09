@@ -46,6 +46,7 @@ class TrainingCreate(BaseModel):
     duration_minutes: int = Field(default=60, gt=0)
     max_participants: Optional[int] = None
     is_active: bool = True
+    participant_ids: Optional[List[int]] = None
 
 
 class TrainingUpdate(BaseModel):
@@ -57,6 +58,12 @@ class TrainingUpdate(BaseModel):
     duration_minutes: Optional[int] = Field(None, gt=0)
     max_participants: Optional[int] = None
     is_active: Optional[bool] = None
+    participant_ids: Optional[List[int]] = None
+
+
+class QuickUserCreate(BaseModel):
+    first_name: str
+    last_name: Optional[str] = None
 
 
 class TrainingResponse(BaseModel):

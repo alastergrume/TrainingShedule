@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -21,6 +22,7 @@ from src.business_logic.schemas import (
     ScheduleEntryCreate,
     ScheduleEntryUpdate,
     BookingCreate,
+    QuickUserCreate,
 )
 
 logging.basicConfig(
@@ -75,7 +77,10 @@ if os.path.isdir(_static_dir):
 
 @app.get("/")
 async def root():
-    return {"message": "Training Schedule API", "version": "1.0.0", "docs": "/docs"}
+    path = os.path.join(os.path.dirname(__file__), "static", "admin", "index.html")
+    if not os.path.exists(path):
+        return {"message": "Training Schedule API", "version": "1.0.0", "docs": "/docs"}
+    return FileResponse(path)
 
 
 @app.get("/health")
@@ -121,7 +126,23 @@ async def get_trainings(
     admin_service: AdminService = Depends(get_admin_service),
 ):
     trainings = admin_service.get_all_trainings(include_inactive)
-    return {"trainings": trainings}
+    result = []
+    for t in trainings:
+        participants = admin_service.get_training_participants(t.id)
+        result.append({
+            "id": t.id,
+            "title": t.title,
+            "description": t.description,
+            "training_type": t.training_type.value if hasattr(t.training_type, "value") else t.training_type,
+            "day_of_week": t.day_of_week,
+            "start_time": t.start_time,
+            "duration_minutes": t.duration_minutes,
+            "max_participants": t.max_participants,
+            "is_active": t.is_active,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "participants": participants,
+        })
+    return {"trainings": result}
 
 
 @app.post("/api/admin/trainings", response_model=TrainingResponse)
@@ -130,8 +151,11 @@ async def create_training(
     admin_id: int = 1,
     admin_service: AdminService = Depends(get_admin_service),
 ):
-    training = admin_service.create_training(training_data, admin_id)
-    return training
+    try:
+        training = admin_service.create_training(training_data, admin_id)
+        return training
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.put("/api/admin/trainings/{training_id}")
@@ -289,6 +313,48 @@ async def update_user_admin_status(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+# --- Admin: Users search & quick create ---
+
+@app.get("/api/admin/users/search")
+async def search_users(
+    q: str = "",
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    if not q.strip():
+        users = admin_service.get_all_users()
+    else:
+        users = admin_service.search_users(q)
+    return {
+        "users": [
+            {
+                "id": u.id,
+                "first_name": u.first_name,
+                "last_name": u.last_name,
+                "username": u.username,
+            }
+            for u in users
+        ]
+    }
+
+
+@app.post("/api/admin/users")
+async def create_quick_user(
+    user_data: QuickUserCreate,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    user = admin_service.create_quick_user(user_data.first_name, user_data.last_name)
+    return {"id": user.id, "first_name": user.first_name, "last_name": user.last_name}
+
+
+@app.get("/api/admin/trainings/{training_id}/participants")
+async def get_training_participants(
+    training_id: int,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    participants = admin_service.get_training_participants(training_id)
+    return {"participants": participants}
+
+
 # --- Admin: Audit & stats ---
 
 @app.get("/api/admin/actions")
@@ -319,6 +385,84 @@ async def admin_stats(
 
 # --- Admin: publish schedule ---
 
+@app.get("/api/admin/schedule/publish-status")
+async def get_publish_status(
+    week_starts: str = "",
+    service: ScheduleService = Depends(get_schedule_service),
+):
+    """Check publication status for given weeks (comma-separated ISO dates)."""
+    from src.models.models import PublishedSchedule as PS
+    result = {}
+    to_verify = []
+
+    for ws in week_starts.split(","):
+        ws = ws.strip()
+        if not ws:
+            continue
+        try:
+            ws_date = datetime.fromisoformat(ws).date()
+        except ValueError:
+            continue
+        published = (
+            service.db.query(PS)
+            .filter(PS.week_start_date == ws_date)
+            .order_by(PS.published_at.desc())
+            .first()
+        )
+        has_message = bool(
+            published and (published.telegram_message_id or published.vk_post_id)
+        )
+        result[ws] = {
+            "published": has_message,
+            "published_at": published.published_at.isoformat() if published else None,
+            "telegram_message_id": published.telegram_message_id if published else None,
+            "telegram_channel_id": settings.TELEGRAM_CHANNEL_ID or None,
+        }
+        if published and (published.telegram_message_id or published.vk_post_id):
+            to_verify.append((ws, published))
+
+    if to_verify:
+        from src.messengers.interfaces.messenger import MessengerFactory
+        tg = None
+        vk = None
+        if settings.TELEGRAM_BOT_TOKEN:
+            try:
+                tg = MessengerFactory.create('telegram')
+            except Exception as e:
+                logger.warning(f"Failed to create telegram messenger: {e}")
+        if settings.VK_GROUP_TOKEN:
+            try:
+                vk = MessengerFactory.create('vk')
+            except Exception as e:
+                logger.warning(f"Failed to create vk messenger: {e}")
+
+        for ws, pub in to_verify:
+            changed = False
+            if pub.telegram_message_id and tg:
+                try:
+                    if not await tg.check_message_exists(tg.channel_id, pub.telegram_message_id):
+                        pub.telegram_message_id = None
+                        changed = True
+                except Exception as e:
+                    logger.warning(f"TG check error for {ws}: {e}")
+            if pub.vk_post_id and vk:
+                try:
+                    if not await vk.check_post_exists(pub.vk_post_id):
+                        pub.vk_post_id = None
+                        changed = True
+                except Exception as e:
+                    logger.warning(f"VK check error for {ws}: {e}")
+            if changed:
+                service.db.commit()
+                has_msg = bool(pub.telegram_message_id or pub.vk_post_id)
+                result[ws]["published"] = has_msg
+                result[ws]["telegram_message_id"] = pub.telegram_message_id
+                if not has_msg:
+                    result[ws]["message_deleted"] = True
+
+    return result
+
+
 @app.post("/api/admin/schedule/publish")
 async def publish_schedule(
     week_start: Optional[str] = None,
@@ -340,19 +484,155 @@ async def publish_schedule(
     days = ScheduleGenerator.generate_from_db(db, week_start_date)
     content = ScheduleFormatter.format_week_schedule(days, week_start_date)
 
-    # Сохраняем запись о публикации
+    # Проверяем, есть ли уже публикация с message_id
+    from src.models.models import PublishedSchedule as PS
+    existing = (
+        db.query(PS)
+        .filter(PS.week_start_date == week_start_date)
+        .first()
+    )
+    existing_tg_id = existing.telegram_message_id if existing else None
+    existing_vk_id = existing.vk_post_id if existing else None
+
+    # Сохраняем/обновляем запись о публикации
     service.publish_schedule(week_start_date, content)
 
-    # Запускаем публикацию через Celery
+    # Запускаем публикацию через Celery (с message_id для редактирования)
     publish_schedule_to_channels.delay(
         week_start_date.isoformat(),
         {"days": [
             {**d, "date": d["date"].isoformat() if hasattr(d["date"], "isoformat") else str(d["date"])}
             for d in days
         ]},
+        telegram_message_id=existing_tg_id,
+        vk_post_id=existing_vk_id,
     )
 
-    return {"message": "Публикация запущена", "preview": content[:300] + "..."}
+    is_update = existing_tg_id or existing_vk_id
+    return {
+        "message": "Расписание обновлено" if is_update else "Публикация запущена",
+        "preview": content[:300] + "...",
+    }
+
+
+# --- Admin: clear week ---
+
+@app.delete("/api/admin/schedule/week")
+async def clear_week(
+    week_start: str,
+    service: ScheduleService = Depends(get_schedule_service),
+):
+    """Delete all schedule entries, bookings, and published messages for a week."""
+    from src.models.models import (
+        ScheduleEntry, Booking, Payment, Reminder, PublishedSchedule,
+    )
+    from src.messengers.interfaces.messenger import MessengerFactory
+
+    ws = datetime.fromisoformat(week_start).date()
+    we_dt = datetime.combine(ws + timedelta(days=7), datetime.min.time())
+    ws_dt = datetime.combine(ws, datetime.min.time())
+    db = service.db
+
+    # Delete messages from TG/VK
+    published = db.query(PublishedSchedule).filter(
+        PublishedSchedule.week_start_date == ws
+    ).first()
+
+    if published:
+        if published.telegram_message_id and settings.TELEGRAM_BOT_TOKEN:
+            try:
+                tg = MessengerFactory.create('telegram')
+                await tg.delete_message(tg.channel_id, published.telegram_message_id)
+            except Exception as e:
+                logger.warning(f"Failed to delete TG message: {e}")
+        if published.vk_post_id and settings.VK_GROUP_TOKEN:
+            try:
+                vk = MessengerFactory.create('vk')
+                await asyncio.to_thread(
+                    vk.vk.wall.delete,
+                    owner_id=f"-{vk.group_id}",
+                    post_id=published.vk_post_id,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to delete VK post: {e}")
+        db.delete(published)
+
+    # Get schedule entry IDs for this week
+    entry_ids = [
+        eid for (eid,) in db.query(ScheduleEntry.id).filter(
+            ScheduleEntry.date >= ws_dt,
+            ScheduleEntry.date < we_dt,
+        ).all()
+    ]
+
+    if entry_ids:
+        booking_ids = [
+            bid for (bid,) in db.query(Booking.id).filter(
+                Booking.schedule_entry_id.in_(entry_ids)
+            ).all()
+        ]
+        if booking_ids:
+            db.query(Reminder).filter(Reminder.booking_id.in_(booking_ids)).delete(synchronize_session=False)
+            db.query(Payment).filter(Payment.booking_id.in_(booking_ids)).delete(synchronize_session=False)
+            db.query(Booking).filter(Booking.id.in_(booking_ids)).delete(synchronize_session=False)
+        db.query(ScheduleEntry).filter(ScheduleEntry.id.in_(entry_ids)).delete(synchronize_session=False)
+
+    db.commit()
+    return {"message": f"Неделя {ws.isoformat()} очищена", "entries_deleted": len(entry_ids)}
+
+
+# --- Admin: check message existence ---
+
+@app.get("/api/admin/schedule/check-message")
+async def check_message_exists(
+    week_start: str,
+    service: ScheduleService = Depends(get_schedule_service),
+):
+    """Check if published messages still exist in Telegram/VK."""
+    from src.models.models import PublishedSchedule as PS
+
+    ws_date = datetime.fromisoformat(week_start).date()
+    published = (
+        service.db.query(PS)
+        .filter(PS.week_start_date == ws_date)
+        .first()
+    )
+    if not published:
+        return {"exists": False, "reason": "not_published"}
+
+    result = {"telegram": None, "vk": None}
+
+    from src.messengers.interfaces.messenger import MessengerFactory
+
+    if published.telegram_message_id and settings.TELEGRAM_BOT_TOKEN:
+        try:
+            tg = MessengerFactory.create('telegram')
+            exists = await tg.check_message_exists(
+                tg.channel_id, published.telegram_message_id
+            )
+            result["telegram"] = exists
+            if not exists:
+                published.telegram_message_id = None
+        except Exception:
+            result["telegram"] = None
+
+    if published.vk_post_id and settings.VK_GROUP_TOKEN:
+        try:
+            vk = MessengerFactory.create('vk')
+            exists = await vk.check_post_exists(published.vk_post_id)
+            result["vk"] = exists
+            if not exists:
+                published.vk_post_id = None
+        except Exception:
+            result["vk"] = None
+
+    changed = (published.telegram_message_id is None and result.get("telegram") is False) or \
+              (published.vk_post_id is None and result.get("vk") is False)
+    if changed:
+        service.db.commit()
+
+    any_exists = any(v is True for v in result.values())
+    return {"exists": any_exists, "channels": result}
 
 
 # --- Admin: payment status ---
@@ -392,6 +672,15 @@ async def miniapp():
     path = os.path.join(os.path.dirname(__file__), "static", "miniapp", "index.html")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Mini App not found")
+    return FileResponse(path)
+
+
+@app.get("/admin")
+async def admin_panel():
+    """Веб-панель администратора."""
+    path = os.path.join(os.path.dirname(__file__), "static", "admin", "index.html")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Admin panel not found")
     return FileResponse(path)
 
 

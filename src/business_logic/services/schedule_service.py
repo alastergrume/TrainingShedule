@@ -234,6 +234,23 @@ class ScheduleService:
         vk_post_id: int = None,
     ) -> PublishedSchedule:
         week_end = week_start + timedelta(days=6)
+        existing = (
+            self.db.query(PublishedSchedule)
+            .filter(PublishedSchedule.week_start_date == week_start)
+            .first()
+        )
+        if existing:
+            existing.content = content
+            existing.week_end_date = week_end
+            existing.updated_at = datetime.now()
+            if telegram_message_id:
+                existing.telegram_message_id = telegram_message_id
+            if vk_post_id:
+                existing.vk_post_id = vk_post_id
+            self.db.commit()
+            self.db.refresh(existing)
+            return existing
+
         published = PublishedSchedule(
             week_start_date=week_start,
             week_end_date=week_end,

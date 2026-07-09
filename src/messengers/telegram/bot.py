@@ -136,6 +136,7 @@ class TelegramBot(MessengerInterface):
         except Exception as e:
             logger.error(f"edit_message error: {e}"); raise
 
+
     async def delete_message(self, chat_id: str, message_id: int) -> bool:
         try:
             await self.bot.delete_message(chat_id=chat_id, message_id=message_id)
@@ -145,13 +146,38 @@ class TelegramBot(MessengerInterface):
 
     async def send_schedule(self, schedule_data: Dict, **kw) -> Dict:
         text = self._fmt_schedule(schedule_data)
-        mid  = await self.send_message(chat_id=self.channel_id, text=text, **kw)
+        me = await self.bot.get_me()
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📝 Записаться на тренировку", url=f"https://t.me/{me.username}?start=book")
+        ]])
+        mid = await self.send_message(chat_id=self.channel_id, text=text, reply_markup=kb, **kw)
         return {'message_id': mid, 'channel': 'telegram', 'chat_id': self.channel_id}
 
     async def update_schedule(self, schedule_data: Dict, message_id: int, **kw) -> Dict:
         text = self._fmt_schedule(schedule_data)
-        await self.edit_message(self.channel_id, message_id, text, **kw)
+        me = await self.bot.get_me()
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="📝 Записаться на тренировку", url=f"https://t.me/{me.username}?start=book")
+        ]])
+        await self.edit_message(self.channel_id, message_id, text, reply_markup=kb, **kw)
         return {'message_id': message_id, 'channel': 'telegram', 'chat_id': self.channel_id}
+
+    async def check_message_exists(self, chat_id: str, message_id: int) -> bool:
+        admin_ids = settings.TELEGRAM_ADMIN_IDS
+        target = str(admin_ids[0]) if isinstance(admin_ids, list) and admin_ids else None
+        if not target:
+            return True
+        try:
+            copied = await self.bot.forward_message(
+                chat_id=target,
+                from_chat_id=chat_id,
+                message_id=message_id,
+                disable_notification=True,
+            )
+            await self.bot.delete_message(chat_id=target, message_id=copied.message_id)
+            return True
+        except Exception:
+            return False
 
     async def send_reminder(self, user_id: str, reminder_data: Dict) -> bool:
         try:
@@ -171,10 +197,15 @@ class TelegramBot(MessengerInterface):
 
     def _fmt_schedule(self, schedule_data: Dict) -> str:
         from src.utils.formatter import ScheduleFormatter
+        from datetime import date as date_type
         days = schedule_data.get('days', [])
         if not days:
             return "Расписание недоступно"
-        week_start = days[0].get('date', date.today())
+        raw = days[0].get('date', date.today())
+        if isinstance(raw, str):
+            week_start = date_type.fromisoformat(raw[:10])
+        else:
+            week_start = raw
         return ScheduleFormatter.format_week_schedule(days, week_start)
 
     # ── Handlers ──────────────────────────────────────────────────────────────
@@ -188,6 +219,13 @@ class TelegramBot(MessengerInterface):
         async def cmd_start(msg: Message):
             name = msg.from_user.first_name or 'друг'
             is_adm = self._is_admin(msg.from_user.id)
+
+            # Deep link: /start book — сразу показываем запись
+            args = msg.text.split(maxsplit=1)
+            if len(args) > 1 and args[1].strip() == 'book':
+                await cmd_book(msg)
+                return
+
             text = (
                 f"Привет, {name}! Я бот для записи на тренировки.\n\n"
                 "/schedule — расписание на текущую неделю\n"
