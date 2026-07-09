@@ -1,11 +1,13 @@
 import sys
 import asyncio
+import sys
 from celery import Celery
 from celery.schedules import crontab
 from datetime import datetime, timedelta
 import logging
 
 from src.config import settings
+from pathlib import Path
 from src.models.base import SessionLocal
 from src.models.models import Booking, ScheduleEntry, Reminder, User
 from src.utils.formatter import ScheduleFormatter
@@ -18,6 +20,9 @@ from src.utils.formatter import ScheduleFormatter
 
 logger = logging.getLogger(__name__)
 
+schedule_dir = Path(__file__).parent.parent.parent / "logs"
+schedule_dir.mkdir(parents=True, exist_ok=True)
+
 celery_app = Celery(
     'training_schedule',
     broker=settings.CELERY_BROKER_URL,
@@ -26,6 +31,10 @@ celery_app = Celery(
 )
 
 celery_app.conf.update(
+    result_expires=120,
+    task_track_started=True,
+    broker_connection_retry_on_startup=True,
+    broker_transport_options={"visibility_timeout": 3600},
     task_serializer='json',
     accept_content=['json'],
     broker_connection_retry_on_startup=True,
@@ -55,6 +64,7 @@ if sys.platform == 'win32':
 # Регистрация мессенджеров в MessengerFactory (Celery не импортирует bot.py сам)
 import src.messengers.telegram.bot  # noqa: F401
 import src.messengers.vk.bot  # noqa: F401
+
 
 @celery_app.task
 def generate_weekly_schedule():
