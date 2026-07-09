@@ -232,6 +232,57 @@ async def cancel_schedule_entry(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/api/admin/schedule-entries/{entry_id}")
+async def get_schedule_entry_details(
+    entry_id: int,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    try:
+        return admin_service.get_schedule_entry_details(entry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/admin/schedule-entries/{entry_id}")
+async def delete_schedule_entry(
+    entry_id: int,
+    admin_id: int = 1,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    try:
+        admin_service.delete_schedule_entry(entry_id, admin_id)
+        return {"message": "Schedule entry deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/admin/schedule-entries/{entry_id}/booking")
+async def add_entry_booking(
+    entry_id: int,
+    user_id: int,
+    admin_id: int = 1,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    try:
+        booking = admin_service.add_booking_for_entry(entry_id, user_id, admin_id)
+        return {"booking_id": booking.id, "message": "Participant added"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/admin/bookings/{booking_id}")
+async def delete_booking(
+    booking_id: int,
+    admin_id: int = 1,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    try:
+        admin_service.delete_booking(booking_id, admin_id)
+        return {"message": "Booking deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # --- Admin: Schedule generation ---
 
 @app.post("/api/admin/schedule/generate")
@@ -259,7 +310,29 @@ async def get_pending_bookings(
     admin_service: AdminService = Depends(get_admin_service),
 ):
     bookings = admin_service.get_pending_bookings()
-    return {"bookings": bookings}
+    return {"bookings": [
+        {
+            "id": b.id,
+            "status": b.status.value if hasattr(b.status, 'value') else b.status,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+            "user": {
+                "first_name": b.user.first_name if b.user else "",
+                "last_name": b.user.last_name if b.user else "",
+                "username": b.user.username if b.user else None,
+            },
+            "training": {
+                "title": b.training.title if b.training else "—",
+            },
+            "schedule_entry": {
+                "date": b.schedule_entry.date.strftime("%d.%m.%Y") if b.schedule_entry else None,
+                "start_time": b.schedule_entry.start_time if b.schedule_entry else None,
+            } if b.schedule_entry else None,
+            "payment": {
+                "is_paid": b.payment.is_paid if b.payment else False,
+            },
+        }
+        for b in bookings
+    ]}
 
 
 @app.post("/api/admin/bookings/{booking_id}/confirm")

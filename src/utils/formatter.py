@@ -28,7 +28,11 @@ class ScheduleFormatter:
         schedule_data — список dict с ключами:
             date: date, entries: list[{time, title, type, bookings: [{user_name, paid}]}]
         """
-        lines = ["Расписание тренировок на следующую неделю:"]
+        week_end = week_start + timedelta(days=6)
+        lines = [
+            f"Расписание тренировок на неделю "
+            f"{week_start.strftime('%d.%m')} - {week_end.strftime('%d.%m')}:"
+        ]
 
         for day_data in schedule_data:
             day_date = day_data.get('date')
@@ -67,8 +71,12 @@ class ScheduleFormatter:
                             line += "\n    -"
 
                 else:  # personal
-                    # Название тренировки уже содержит имя: "Персональная тренировка Саша"
-                    line = f"{start_time}- {title}"
+                    bookings = entry.get('bookings', [])
+                    if bookings:
+                        participant = bookings[0].get('user_name', '')
+                        line = f"{start_time}- {title} ({participant})"
+                    else:
+                        line = f"{start_time}- {title} (свободна)"
 
                 lines.append(line)
 
