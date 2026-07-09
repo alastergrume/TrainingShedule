@@ -163,6 +163,8 @@ class TelegramBot(MessengerInterface):
         return {'message_id': message_id, 'channel': 'telegram', 'chat_id': self.channel_id}
 
     async def check_message_exists(self, chat_id: str, message_id: int) -> bool:
+        """Returns True if exists, False if confirmed deleted, raises on connection/other errors."""
+        from aiogram.exceptions import TelegramBadRequest
         admin_ids = settings.TELEGRAM_ADMIN_IDS
         target = str(admin_ids[0]) if isinstance(admin_ids, list) and admin_ids else None
         if not target:
@@ -176,8 +178,10 @@ class TelegramBot(MessengerInterface):
             )
             await self.bot.delete_message(chat_id=target, message_id=copied.message_id)
             return True
-        except Exception:
-            return False
+        except TelegramBadRequest as e:
+            if "message to forward not found" in str(e).lower():
+                return False
+            raise
 
     async def send_reminder(self, user_id: str, reminder_data: Dict) -> bool:
         try:
@@ -254,16 +258,27 @@ class TelegramBot(MessengerInterface):
             db = self._db()
             try:
                 from src.utils.formatter import ScheduleGenerator, ScheduleFormatter
-                ws   = _this_monday()
-                days = ScheduleGenerator.generate_from_db(db, ws)
-                # Собираем только bookable тренировки
+                from src.models.models import PublishedSchedule
+                today = date.today()
+                this_monday = today - timedelta(days=today.weekday())
+                published_weeks = (
+                    db.query(PublishedSchedule.week_start_date)
+                    .filter(PublishedSchedule.week_start_date >= this_monday)
+                    .distinct()
+                    .all()
+                )
+                week_starts = sorted(set(
+                    [this_monday] + [pw[0].date() if hasattr(pw[0], 'date') else pw[0] for pw in published_weeks]
+                ))
                 rows = []
-                for day in days:
-                    for e in day.get('entries', []):
-                        if e['type'] != 'basic' and not e.get('is_cancelled'):
-                            d = day['date']
-                            label = f"{d.strftime('%d.%m')} {e['time'].split('-')[0]} — {e['title']}"
-                            rows.append([_btn(label, f"book:{e['id']}")])
+                for ws in week_starts:
+                    days = ScheduleGenerator.generate_from_db(db, ws)
+                    for day in days:
+                        for e in day.get('entries', []):
+                            if e['type'] != 'basic' and not e.get('is_cancelled'):
+                                d = day['date']
+                                label = f"{d.strftime('%d.%m')} {e['time'].split('-')[0]} — {e['title']}"
+                                rows.append([_btn(label, f"book:{e['id']}")])
                 if not rows:
                     await msg.answer("Нет доступных тренировок для записи.")
                     return

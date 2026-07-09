@@ -20,7 +20,7 @@ from src.utils.formatter import ScheduleFormatter
 
 logger = logging.getLogger(__name__)
 
-schedule_dir = Path(__file__).parent.parent.parent / "logs"
+schedule_dir = Path(__file__).parent.parent / "logs"
 schedule_dir.mkdir(parents=True, exist_ok=True)
 
 celery_app = Celery(
@@ -37,7 +37,6 @@ celery_app.conf.update(
     broker_transport_options={"visibility_timeout": 3600},
     task_serializer='json',
     accept_content=['json'],
-    broker_connection_retry_on_startup=True,
     result_serializer='json',
     timezone='Europe/Moscow',
     enable_utc=True,

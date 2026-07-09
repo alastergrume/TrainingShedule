@@ -409,56 +409,12 @@ async def get_publish_status(
             .order_by(PS.published_at.desc())
             .first()
         )
-        has_message = bool(
-            published and (published.telegram_message_id or published.vk_post_id)
-        )
         result[ws] = {
-            "published": has_message,
+            "published": published is not None,
             "published_at": published.published_at.isoformat() if published else None,
             "telegram_message_id": published.telegram_message_id if published else None,
             "telegram_channel_id": settings.TELEGRAM_CHANNEL_ID or None,
         }
-        if published and (published.telegram_message_id or published.vk_post_id):
-            to_verify.append((ws, published))
-
-    if to_verify:
-        from src.messengers.interfaces.messenger import MessengerFactory
-        tg = None
-        vk = None
-        if settings.TELEGRAM_BOT_TOKEN:
-            try:
-                tg = MessengerFactory.create('telegram')
-            except Exception as e:
-                logger.warning(f"Failed to create telegram messenger: {e}")
-        if settings.VK_GROUP_TOKEN:
-            try:
-                vk = MessengerFactory.create('vk')
-            except Exception as e:
-                logger.warning(f"Failed to create vk messenger: {e}")
-
-        for ws, pub in to_verify:
-            changed = False
-            if pub.telegram_message_id and tg:
-                try:
-                    if not await tg.check_message_exists(tg.channel_id, pub.telegram_message_id):
-                        pub.telegram_message_id = None
-                        changed = True
-                except Exception as e:
-                    logger.warning(f"TG check error for {ws}: {e}")
-            if pub.vk_post_id and vk:
-                try:
-                    if not await vk.check_post_exists(pub.vk_post_id):
-                        pub.vk_post_id = None
-                        changed = True
-                except Exception as e:
-                    logger.warning(f"VK check error for {ws}: {e}")
-            if changed:
-                service.db.commit()
-                has_msg = bool(pub.telegram_message_id or pub.vk_post_id)
-                result[ws]["published"] = has_msg
-                result[ws]["telegram_message_id"] = pub.telegram_message_id
-                if not has_msg:
-                    result[ws]["message_deleted"] = True
 
     return result
 
@@ -604,6 +560,7 @@ async def check_message_exists(
 
     from src.messengers.interfaces.messenger import MessengerFactory
 
+    changed = False
     if published.telegram_message_id and settings.TELEGRAM_BOT_TOKEN:
         try:
             tg = MessengerFactory.create('telegram')
@@ -611,8 +568,9 @@ async def check_message_exists(
                 tg.channel_id, published.telegram_message_id
             )
             result["telegram"] = exists
-            if not exists:
+            if exists is False:
                 published.telegram_message_id = None
+                changed = True
         except Exception:
             result["telegram"] = None
 
@@ -621,13 +579,12 @@ async def check_message_exists(
             vk = MessengerFactory.create('vk')
             exists = await vk.check_post_exists(published.vk_post_id)
             result["vk"] = exists
-            if not exists:
+            if exists is False:
                 published.vk_post_id = None
+                changed = True
         except Exception:
             result["vk"] = None
 
-    changed = (published.telegram_message_id is None and result.get("telegram") is False) or \
-              (published.vk_post_id is None and result.get("vk") is False)
     if changed:
         service.db.commit()
 
