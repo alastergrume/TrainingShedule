@@ -232,6 +232,57 @@ async def cancel_schedule_entry(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@app.get("/api/admin/schedule-entries/{entry_id}")
+async def get_schedule_entry_details(
+    entry_id: int,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    try:
+        return admin_service.get_schedule_entry_details(entry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.delete("/api/admin/schedule-entries/{entry_id}")
+async def delete_schedule_entry(
+    entry_id: int,
+    admin_id: int = 1,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    try:
+        admin_service.delete_schedule_entry(entry_id, admin_id)
+        return {"message": "Schedule entry deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.post("/api/admin/schedule-entries/{entry_id}/booking")
+async def add_entry_booking(
+    entry_id: int,
+    user_id: int,
+    admin_id: int = 1,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    try:
+        booking = admin_service.add_booking_for_entry(entry_id, user_id, admin_id)
+        return {"booking_id": booking.id, "message": "Participant added"}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/api/admin/bookings/{booking_id}")
+async def delete_booking(
+    booking_id: int,
+    admin_id: int = 1,
+    admin_service: AdminService = Depends(get_admin_service),
+):
+    try:
+        admin_service.delete_booking(booking_id, admin_id)
+        return {"message": "Booking deleted"}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # --- Admin: Schedule generation ---
 
 @app.post("/api/admin/schedule/generate")

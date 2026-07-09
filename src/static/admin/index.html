@@ -203,6 +203,40 @@
   .weeks-setting { display: flex; align-items: center; gap: 8px; }
   .weeks-setting label { margin: 0; font-size: 13px; white-space: nowrap; }
   .weeks-setting select { width: 60px; padding: 5px 8px; font-size: 13px; }
+
+  /* Training chip tooltip */
+  .training-chip { position: relative; }
+  .training-chip .chip-tooltip {
+    display: none; position: absolute; left: 105%; top: 0; z-index: 50;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+    padding: 8px 10px; font-size: 12px; white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,.12); min-width: 160px;
+  }
+  .training-chip:hover .chip-tooltip { display: block; }
+  .chip-tooltip .tt-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
+
+  /* Chip close button */
+  .chip-close {
+    position: absolute; top: 2px; right: 4px; background: none; border: none;
+    font-size: 14px; color: var(--muted); cursor: pointer; line-height: 1; padding: 2px;
+  }
+  .chip-close:hover { color: var(--danger); }
+
+  /* Day header add button */
+  .day-add {
+    display: inline-block; margin-left: 6px; cursor: pointer; font-size: 14px;
+    color: var(--muted); background: none; border: none; line-height: 1;
+  }
+  .day-add:hover { color: var(--primary); }
+
+  /* Entry editor participant list */
+  .ee-participant {
+    display: flex; align-items: center; gap: 8px; padding: 6px 0;
+    border-bottom: 1px solid var(--border); font-size: 13px;
+  }
+  .ee-participant:last-child { border-bottom: none; }
+  .ee-participant .ee-name { flex: 1; }
+  .ee-participant .ee-actions { display: flex; gap: 6px; align-items: center; }
 </style>
 </head>
 <body>
@@ -396,8 +430,11 @@
     </div>
     <form id="training-form" onsubmit="saveTraining(event)">
       <input type="hidden" id="training-id">
+      <input type="hidden" id="t-mode" value="template">
+      <input type="hidden" id="t-schedule-date" value="">
+      <input type="hidden" id="t-entry-id" value="">
 
-      <!-- 1. Тип + День недели -->
+      <!-- 1. Тип + День недели / Дата -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group">
           <label>Тип</label>
@@ -407,7 +444,7 @@
             <option value="basic">Базовая</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="t-day-group">
           <label>День недели</label>
           <select id="t-day" required>
             <option value="0">Понедельник</option>
@@ -419,17 +456,25 @@
             <option value="6">Воскресенье</option>
           </select>
         </div>
+        <div class="form-group" id="t-date-group" style="display:none;">
+          <label>Дата</label>
+          <input type="text" id="t-date-display" readonly style="background:var(--bg);">
+        </div>
       </div>
 
-      <!-- 2. Время + Длительность + Макс. + Активная -->
+      <!-- 2. Время + Длительность + Макс. -->
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div class="form-group">
           <label>Время начала</label>
           <input type="time" id="t-start-time" required>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="t-duration-group">
           <label>Длительность (мин)</label>
           <input type="number" id="t-duration" value="60" min="15" max="300">
+        </div>
+        <div class="form-group" id="t-end-time-group" style="display:none;">
+          <label>Время окончания</label>
+          <input type="time" id="t-end-time">
         </div>
         <div class="form-group">
           <label>Макс. участников</label>
@@ -453,15 +498,35 @@
         <div id="participants-container"></div>
       </div>
 
-      <!-- 5. Описание -->
+      <!-- 5. Участники записи (schedule mode) -->
+      <div class="form-group" id="entry-bookings-section" style="display:none;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <label style="margin:0;">Участники</label>
+          <button type="button" class="btn btn-outline btn-sm" onclick="ebAddParticipantRow()">+ Добавить</button>
+        </div>
+        <div id="entry-bookings-list"></div>
+        <div id="eb-add-container"></div>
+      </div>
+
+      <!-- 6. Описание -->
       <div class="form-group">
         <label>Описание</label>
         <textarea id="t-description" placeholder="Необязательно"></textarea>
       </div>
 
-      <div class="modal-footer">
+      <div class="modal-footer" id="t-footer-template">
         <button type="button" class="btn btn-outline" onclick="closeModal('training-modal')">Отмена</button>
         <button type="submit" class="btn btn-primary" id="training-save-btn">Сохранить</button>
+      </div>
+      <div class="modal-footer" id="t-footer-schedule" style="display:none;justify-content:space-between;">
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-danger btn-sm" onclick="scheduleDeleteEntry()">Удалить</button>
+          <button type="button" class="btn btn-warning btn-sm" onclick="scheduleCancelEntry()">Отменить тренировку</button>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-outline" onclick="closeModal('training-modal')">Закрыть</button>
+          <button type="submit" class="btn btn-primary" id="schedule-save-btn">Сохранить</button>
+        </div>
       </div>
     </form>
   </div>
@@ -750,7 +815,7 @@ async function loadSchedule() {
         grid.className = 'schedule-grid';
         grid.style.marginBottom = '20px';
         container.appendChild(grid);
-        renderScheduleGrid(grid, schedule, weekStart);
+        renderScheduleGrid(grid, schedule, weekStart, pubInfo.published);
       }
     } else {
       for (const { weekStart, weekIso, schedule } of allSchedules) {
@@ -776,7 +841,7 @@ async function loadSchedule() {
         card.className = 'card';
         card.style.marginBottom = '20px';
         container.appendChild(card);
-        renderScheduleList(card, [{ weekStart, schedule }]);
+        renderScheduleList(card, [{ weekStart, schedule }], pubInfo.published);
       }
     }
   } catch(e) {
@@ -814,19 +879,20 @@ async function clearWeek(weekIso, btn) {
   }
 }
 
-function renderScheduleGrid(grid, schedule, weekStart) {
+function renderScheduleGrid(grid, schedule, weekStart, published) {
   const days = schedule || [];
 
   for (let i = 0; i < 7; i++) {
     const dayData = days[i] || {};
     const dayDate = new Date(weekStart);
     dayDate.setDate(dayDate.getDate() + i);
+    const dayIso = toLocalIso(dayDate);
     const col = document.createElement('div');
     col.className = 'day-col';
     const isToday = dayDate.toDateString() === new Date().toDateString();
     col.innerHTML = `
       <div class="day-header" style="${isToday ? 'background:#eef2ff;color:var(--primary);' : ''}">
-        <div>${DAYS[i]}</div>
+        <div>${DAYS[i]} <button class="day-add" onclick="openAddEntry('${dayIso}')" title="Добавить тренировку">＋</button></div>
         <div class="date">${fmtDate(dayDate)}</div>
       </div>
       <div class="day-body"></div>`;
@@ -839,22 +905,25 @@ function renderScheduleGrid(grid, schedule, weekStart) {
     } else {
       entries.forEach(e => {
         const chip = document.createElement('div');
-        chip.className = 'training-chip';
-        const names = (e.bookings || []).map(b => b.user_name).filter(Boolean);
+        chip.className = 'training-chip' + (e.is_cancelled ? ' cancelled' : '');
+        const bookings = e.bookings || [];
+        const tooltipRows = bookings.length
+          ? bookings.map(b => `<div class="tt-row"><span>${b.user_name}</span><span>${b.paid ? '✅' : '💰'}</span></div>`).join('')
+          : '<div style="color:var(--muted);">Нет записей</div>';
         chip.innerHTML = `
-          <div style="font-weight:600;">${e.title || 'Тренировка'}</div>
+          <button class="chip-close" onclick="event.stopPropagation();chipRemove(${e.id},${!!published})" title="${published ? 'Отменить' : 'Удалить'}">✕</button>
+          <div style="font-weight:600;padding-right:16px;">${e.title || 'Тренировка'}</div>
           <div class="time">${e.time || ''}</div>
-          <div style="font-size:11px;color:var(--muted);">${e.bookings?.length || 0}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>
-          ${names.length ? `<div style="font-size:11px;margin-top:2px;">${names.join(', ')}</div>` : ''}`;
-        chip.onclick = () => promptCancelEntry(e.id);
-        chip.title = 'Нажмите чтобы отменить';
+          <div style="font-size:11px;color:var(--muted);">${bookings.length}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>
+          <div class="chip-tooltip">${tooltipRows}</div>`;
+        chip.onclick = () => openEntryEditor(e.id);
         body.appendChild(chip);
       });
     }
   }
 }
 
-function renderScheduleList(card, allSchedules) {
+function renderScheduleList(card, allSchedules, published) {
   let html = '';
   for (const { weekStart, schedule } of allSchedules) {
     const days = schedule || [];
@@ -869,10 +938,10 @@ function renderScheduleList(card, allSchedules) {
         html += `<div class="schedule-list-item">
           <div class="schedule-list-day">${DAYS_FULL[i]}, ${fmtDate(dayDate)}</div>
           <div class="schedule-list-time">${e.time || ''}</div>
-          <div style="flex:1;font-weight:500;">${e.title || 'Тренировка'}${names.length ? `<div style="font-size:11px;font-weight:400;color:var(--muted);margin-top:2px;">${names.join(', ')}</div>` : ''}</div>
+          <div style="flex:1;font-weight:500;cursor:pointer;" onclick="openEntryEditor(${e.id})">${e.title || 'Тренировка'}${names.length ? `<div style="font-size:11px;font-weight:400;color:var(--muted);margin-top:2px;">${names.join(', ')}</div>` : ''}</div>
           <span class="badge badge-${e.type}">${typeLabel(e.type)}</span>
           <div style="font-size:12px;color:var(--muted);min-width:60px;text-align:right;">${e.bookings?.length || 0}${e.max_participants ? '/'+e.max_participants : ''} чел.</div>
-          <button class="btn btn-danger btn-sm" onclick="promptCancelEntry(${e.id})" title="Отменить">✕</button>
+          <button class="btn btn-danger btn-sm" onclick="chipRemove(${e.id},${!!published})" title="${published ? 'Отменить' : 'Удалить'}">✕</button>
         </div>`;
       });
     }
@@ -896,6 +965,252 @@ async function confirmCancel() {
     toast('Занятие отменено');
     loadSchedule();
   } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+// ---- Chip remove (× button) ----
+async function chipRemove(entryId, published) {
+  if (published) {
+    cancelEntryId = entryId;
+    document.getElementById('cancel-reason').value = '';
+    openModal('cancel-modal');
+  } else {
+    if (!confirm('Удалить тренировку из расписания?')) return;
+    try {
+      await api('DELETE', `/api/admin/schedule-entries/${entryId}`);
+      toast('Тренировка удалена');
+      loadSchedule();
+    } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+  }
+}
+
+// ---- Schedule mode helpers for training modal ----
+let entryBookings = [];
+
+function setTrainingModalMode(mode) {
+  const isSchedule = mode === 'schedule';
+  document.getElementById('t-mode').value = mode;
+  document.getElementById('t-day-group').style.display = isSchedule ? 'none' : '';
+  document.getElementById('t-date-group').style.display = isSchedule ? '' : 'none';
+  document.getElementById('t-duration-group').style.display = isSchedule ? 'none' : '';
+  document.getElementById('t-end-time-group').style.display = isSchedule ? '' : 'none';
+  document.getElementById('participants-section').style.display = isSchedule ? 'none' : '';
+  document.getElementById('entry-bookings-section').style.display = isSchedule ? '' : 'none';
+  document.getElementById('t-footer-template').style.display = isSchedule ? 'none' : 'flex';
+  document.getElementById('t-footer-schedule').style.display = isSchedule ? 'flex' : 'none';
+}
+
+function formatDateRu(iso) {
+  const d = new Date(iso + 'T00:00:00');
+  const DAYS_FULL = ['Воскресенье','Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+  return `${DAYS_FULL[d.getDay()]}, ${d.toLocaleDateString('ru-RU', {day:'2-digit',month:'2-digit',year:'numeric'})}`;
+}
+
+// Open modal to ADD a new entry on a specific date
+function openAddEntry(dateIso) {
+  document.getElementById('training-form').reset();
+  setTrainingModalMode('schedule');
+  document.getElementById('training-modal-title').textContent = 'Добавить тренировку в расписание';
+  document.getElementById('training-id').value = '';
+  document.getElementById('t-entry-id').value = '';
+  document.getElementById('t-mode').value = 'schedule';
+  document.getElementById('t-schedule-date').value = dateIso;
+  document.getElementById('t-date-display').value = formatDateRu(dateIso);
+  document.getElementById('t-duration').value = 60;
+  document.getElementById('t-end-time').value = '';
+  entryBookings = [];
+  modalParticipants = [];
+  ebPendingParticipants = [];
+  document.getElementById('eb-add-container').innerHTML = '';
+  renderEntryBookings();
+  renderParticipantRows();
+  onTrainingTypeChange();
+
+  const modal = document.getElementById('training-modal-box');
+  modal.style.position = ''; modal.style.left = ''; modal.style.top = ''; modal.style.margin = '';
+  document.querySelector('#t-footer-schedule .btn-danger').style.display = 'none';
+  document.querySelector('#t-footer-schedule .btn-warning').style.display = 'none';
+  openModal('training-modal');
+}
+
+// Open modal to EDIT an existing schedule entry
+async function openEntryEditor(entryId) {
+  try {
+    const entry = await api('GET', `/api/admin/schedule-entries/${entryId}`);
+    setTrainingModalMode('schedule');
+    document.getElementById('training-modal-title').textContent = 'Редактировать тренировку';
+    document.getElementById('training-id').value = entry.training_id;
+    document.getElementById('t-entry-id').value = entry.id;
+    document.getElementById('t-schedule-date').value = entry.date;
+    document.getElementById('t-date-display').value = formatDateRu(entry.date);
+    document.getElementById('t-title').value = entry.title;
+    document.getElementById('t-type').value = entry.training_type;
+    document.getElementById('t-start-time').value = entry.start_time;
+    document.getElementById('t-end-time').value = entry.end_time;
+    document.getElementById('t-max').value = entry.max_participants || '';
+    document.getElementById('t-description').value = '';
+
+    entryBookings = entry.bookings || [];
+    modalParticipants = [];
+    ebPendingParticipants = [];
+    document.getElementById('eb-add-container').innerHTML = '';
+    renderEntryBookings();
+    renderParticipantRows();
+    onTrainingTypeChange();
+
+    const modal = document.getElementById('training-modal-box');
+    modal.style.position = ''; modal.style.left = ''; modal.style.top = ''; modal.style.margin = '';
+    document.querySelector('#t-footer-schedule .btn-danger').style.display = '';
+    document.querySelector('#t-footer-schedule .btn-warning').style.display = '';
+    openModal('training-modal');
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+function renderEntryBookings() {
+  const container = document.getElementById('entry-bookings-list');
+  const allItems = [];
+
+  // Existing bookings (saved entries)
+  for (const b of entryBookings) {
+    allItems.push(`
+    <div class="ee-participant">
+      <span class="ee-name">${b.user_name}</span>
+      <div class="ee-actions">
+        <button type="button" class="btn btn-sm ${b.is_paid ? 'btn-success' : 'btn-outline'}" onclick="ebTogglePayment(${b.booking_id}, ${!b.is_paid})">
+          ${b.is_paid ? '✅ Оплачено' : '💰 Не оплачено'}
+        </button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="ebRemoveBooking(${b.booking_id})" title="Удалить">✕</button>
+      </div>
+    </div>`);
+  }
+
+  // Pending participants (new entry, not yet saved)
+  for (let i = 0; i < ebPendingParticipants.length; i++) {
+    const p = ebPendingParticipants[i];
+    allItems.push(`
+    <div class="ee-participant">
+      <span class="ee-name">${escHtml(p.name)}</span>
+      <div class="ee-actions">
+        <button type="button" class="btn btn-sm btn-danger" onclick="ebRemovePending(${i})" title="Удалить">✕</button>
+      </div>
+    </div>`);
+  }
+
+  if (!allItems.length) {
+    container.innerHTML = '<div style="color:var(--muted);font-size:13px;padding:4px 0;">Нет записей</div>';
+    return;
+  }
+  container.innerHTML = allItems.join('');
+}
+
+function ebRemovePending(idx) {
+  const removed = ebPendingParticipants.splice(idx, 1)[0];
+  if (removed) {
+    const mi = modalParticipants.findIndex(p => p.id === removed.id);
+    if (mi !== -1) modalParticipants.splice(mi, 1);
+  }
+  renderEntryBookings();
+}
+
+async function ebTogglePayment(bookingId, isPaid) {
+  try {
+    await api('PUT', `/api/admin/bookings/${bookingId}/payment?is_paid=${isPaid}`);
+    const b = entryBookings.find(x => x.booking_id === bookingId);
+    if (b) b.is_paid = isPaid;
+    renderEntryBookings();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+async function ebRemoveBooking(bookingId) {
+  if (!confirm('Удалить участника?')) return;
+  try {
+    await api('DELETE', `/api/admin/bookings/${bookingId}`);
+    entryBookings = entryBookings.filter(b => b.booking_id !== bookingId);
+    renderEntryBookings();
+    toast('Участник удалён');
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+let ebPendingParticipants = []; // for new entries without entryId yet
+
+function ebAddParticipantRow() {
+  const container = document.getElementById('eb-add-container');
+  const idx = container.children.length;
+  const row = document.createElement('div');
+  row.className = 'participant-row';
+  row.style.position = 'relative';
+  row.innerHTML = `
+    <input type="text" class="participant-input" placeholder="Имя участника"
+           data-eb-idx="${idx}" onfocus="ebShowAutocomplete(this)" oninput="ebOnParticipantInput(this)">
+    <div class="autocomplete-list" id="eb-ac-${idx}"></div>
+    <button type="button" class="btn btn-danger btn-sm btn-remove" onclick="ebRemoveAddRow(this)">✕</button>`;
+  container.appendChild(row);
+  row.querySelector('input').focus();
+}
+
+function ebRemoveAddRow(btn) {
+  btn.closest('.participant-row').remove();
+}
+
+let ebAcDebounce = null;
+function ebOnParticipantInput(input) {
+  clearTimeout(ebAcDebounce);
+  ebAcDebounce = setTimeout(() => ebFetchAutocomplete(input), 200);
+}
+
+function ebShowAutocomplete(input) {
+  ebFetchAutocomplete(input);
+}
+
+async function ebFetchAutocomplete(input) {
+  const idx = input.dataset.ebIdx;
+  const q = input.value.trim();
+  const list = document.getElementById('eb-ac-' + idx);
+  try {
+    const data = await api('GET', '/api/admin/users/search?q=' + encodeURIComponent(q));
+    const users = data.users || [];
+    if (!users.length) { list.classList.remove('open'); return; }
+    list.innerHTML = users.map(u => {
+      const name = `${u.first_name} ${u.last_name || ''}`.trim();
+      return `<div class="autocomplete-item" onmousedown="ebSelectParticipant(${u.id},'${escHtml(name)}', this)">${name}</div>`;
+    }).join('');
+    list.classList.add('open');
+  } catch(e) { list.classList.remove('open'); }
+  input.addEventListener('blur', () => setTimeout(() => list.classList.remove('open'), 150), { once: true });
+}
+
+async function ebSelectParticipant(userId, userName, el) {
+  const row = el.closest('.participant-row');
+  const entryId = document.getElementById('t-entry-id').value;
+  if (entryId) {
+    try {
+      const res = await api('POST', `/api/admin/schedule-entries/${entryId}/booking?user_id=${userId}`);
+      entryBookings.push({ booking_id: res.booking_id, user_id: userId, user_name: userName, status: 'confirmed', is_paid: false });
+      renderEntryBookings();
+      toast('Участник добавлен');
+    } catch(e) { toast(e.message, 'error'); }
+  } else {
+    ebPendingParticipants.push({ id: userId, name: userName });
+    modalParticipants.push({ id: userId, name: userName });
+  }
+  if (row) row.remove();
+}
+
+async function scheduleDeleteEntry() {
+  if (!confirm('Удалить тренировку из расписания?')) return;
+  const entryId = document.getElementById('t-entry-id').value;
+  try {
+    await api('DELETE', `/api/admin/schedule-entries/${entryId}`);
+    closeModal('training-modal');
+    toast('Тренировка удалена');
+    loadSchedule();
+  } catch(e) { toast('Ошибка: ' + e.message, 'error'); }
+}
+
+function scheduleCancelEntry() {
+  cancelEntryId = document.getElementById('t-entry-id').value;
+  closeModal('training-modal');
+  document.getElementById('cancel-reason').value = '';
+  openModal('cancel-modal');
 }
 
 // ---- Trainings ----
@@ -1003,6 +1318,7 @@ function typeLabel(t) {
 let modalParticipants = []; // [{id, name}] — id=null for new text entries
 
 function openTrainingModal(id) {
+  setTrainingModalMode('template');
   const modal = document.getElementById('training-modal-box');
   modal.style.position = '';
   modal.style.left = '';
@@ -1011,6 +1327,8 @@ function openTrainingModal(id) {
 
   document.getElementById('training-modal-title').textContent = id ? 'Редактировать тренировку' : 'Добавить тренировку';
   document.getElementById('training-id').value = id || '';
+  document.getElementById('t-entry-id').value = '';
+  document.getElementById('t-schedule-date').value = '';
   modalParticipants = [];
 
   if (id) {
@@ -1044,6 +1362,7 @@ function copyTraining(id) {
   const t = trainingsData.find(x => x.id == id);
   if (!t) return;
 
+  setTrainingModalMode('template');
   const modal = document.getElementById('training-modal-box');
   modal.style.position = '';
   modal.style.left = '';
@@ -1072,7 +1391,8 @@ function copyTraining(id) {
 }
 
 function onTrainingTypeChange() {
-  document.getElementById('participants-section').style.display = '';
+  const isSchedule = document.getElementById('t-mode').value === 'schedule';
+  document.getElementById('participants-section').style.display = isSchedule ? 'none' : '';
   checkParticipantsLimit();
 
   const titleInput = document.getElementById('t-title');
@@ -1216,16 +1536,54 @@ async function saveTraining(e) {
     participant_ids: participantIds,
   };
 
+  const mode = document.getElementById('t-mode').value;
+
   try {
-    if (id) {
-      await api('PUT', `/api/admin/trainings/${id}`, body);
-      toast('Тренировка обновлена');
+    if (mode === 'schedule') {
+      const entryId = document.getElementById('t-entry-id').value;
+      const dateIso = document.getElementById('t-schedule-date').value;
+      const startTime = document.getElementById('t-start-time').value;
+      const endTime = document.getElementById('t-end-time').value;
+
+      if (entryId) {
+        await api('PUT', `/api/admin/schedule-entries/${entryId}`, { start_time: startTime, end_time: endTime });
+        toast('Тренировка обновлена');
+      } else {
+        // Compute day_of_week from the actual date
+        const d = new Date(dateIso + 'T00:00:00');
+        const jsDay = d.getDay(); // 0=Sun
+        body.day_of_week = jsDay === 0 ? 6 : jsDay - 1; // convert to 0=Mon
+
+        const training = await api('POST', '/api/admin/trainings', body);
+        const trainingId = training.id;
+        const entryRes = await api('POST', '/api/admin/schedule-entries', {
+          training_id: trainingId,
+          date: dateIso + 'T00:00:00',
+          start_time: startTime,
+          end_time: endTime,
+        });
+
+        // Add participants as bookings on the new entry
+        for (const pid of participantIds) {
+          try {
+            await api('POST', `/api/admin/schedule-entries/${entryRes.entry_id}/booking?user_id=${pid}`);
+          } catch(e) {}
+        }
+        toast('Тренировка добавлена в расписание');
+      }
+      closeModal('training-modal');
+      loadSchedule();
     } else {
-      await api('POST', '/api/admin/trainings', body);
-      toast('Тренировка добавлена');
+      if (id) {
+        await api('PUT', `/api/admin/trainings/${id}`, body);
+        toast('Тренировка обновлена');
+      } else {
+        await api('POST', '/api/admin/trainings', body);
+        toast('Тренировка добавлена');
+      }
+      closeModal('training-modal');
+      loadTrainings();
     }
-    closeModal('training-modal');
-    loadTrainings();
   } catch(err) {
     toast('Ошибка: ' + err.message, 'error');
   } finally {
