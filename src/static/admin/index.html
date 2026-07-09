@@ -789,21 +789,6 @@ async function publishWeek(weekIso, btn) {
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>';
   try {
-    if (isUpdate) {
-      const check = await api('GET', `/api/admin/schedule/check-message?week_start=${weekIso}`);
-      if (!check.exists) {
-        toast('Сообщение удалено из канала. Нажмите «Опубликовать» для новой публикации.', 'warning');
-        btn.disabled = false;
-        btn.className = 'btn btn-sm btn-primary';
-        btn.innerHTML = '📢 Опубликовать';
-        const statusSpan = btn.parentElement.querySelector('span[style*="color"]');
-        if (statusSpan) {
-          statusSpan.style.color = 'var(--warning)';
-          statusSpan.textContent = '⏳ Сообщение удалено';
-        }
-        return;
-      }
-    }
     await api('POST', `/api/admin/schedule/publish?week_start=${weekIso}`);
     toast(isUpdate ? 'Расписание обновлено' : 'Публикация запущена');
     loadSchedule();
@@ -1268,18 +1253,22 @@ async function loadBookings() {
 function renderBookings(bookings) {
   const tbody = document.getElementById('bookings-body');
   if (!bookings.length) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px;">Нет ожидающих бронирований</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:40px;">Нет бронирований</td></tr>';
     return;
   }
-  tbody.innerHTML = bookings.map(b => `
+  const isPaid = b => b.payment && b.payment.is_paid;
+  tbody.innerHTML = bookings.map(b => {
+    const se = b.schedule_entry;
+    const trainingInfo = (b.training?.title || '—') + (se ? `<div class="text-muted">${se.date || ''} ${se.start_time || ''}</div>` : '');
+    return `
     <tr>
       <td>#${b.id}</td>
       <td>${b.user?.first_name || ''} ${b.user?.last_name || ''}<div class="text-muted">${b.user?.username ? '@'+b.user.username : ''}</div></td>
-      <td>${b.training?.title || '—'}</td>
+      <td>${trainingInfo}</td>
       <td><span class="badge badge-${b.status}">${statusLabel(b.status)}</span></td>
       <td>
-        <button class="btn btn-sm ${b.payment?.is_paid ? 'btn-success' : 'btn-outline'}" onclick="togglePayment(${b.id}, ${!b.payment?.is_paid})">
-          ${b.payment?.is_paid ? '✅ Оплачено' : '💰 Не оплачено'}
+        <button class="btn btn-sm ${isPaid(b) ? 'btn-success' : 'btn-outline'}" onclick="togglePayment(${b.id}, ${!isPaid(b)})">
+          ${isPaid(b) ? '✅ Оплачено' : '💰 Не оплачено'}
         </button>
       </td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -1288,7 +1277,8 @@ function renderBookings(bookings) {
           <button class="btn btn-danger btn-sm" onclick="promptReject(${b.id})">✗ Отклонить</button>
         ` : ''}
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 }
 
 function statusLabel(s) {

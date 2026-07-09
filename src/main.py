@@ -259,7 +259,29 @@ async def get_pending_bookings(
     admin_service: AdminService = Depends(get_admin_service),
 ):
     bookings = admin_service.get_pending_bookings()
-    return {"bookings": bookings}
+    return {"bookings": [
+        {
+            "id": b.id,
+            "status": b.status.value if hasattr(b.status, 'value') else b.status,
+            "created_at": b.created_at.isoformat() if b.created_at else None,
+            "user": {
+                "first_name": b.user.first_name if b.user else "",
+                "last_name": b.user.last_name if b.user else "",
+                "username": b.user.username if b.user else None,
+            },
+            "training": {
+                "title": b.training.title if b.training else "—",
+            },
+            "schedule_entry": {
+                "date": b.schedule_entry.date.strftime("%d.%m.%Y") if b.schedule_entry else None,
+                "start_time": b.schedule_entry.start_time if b.schedule_entry else None,
+            } if b.schedule_entry else None,
+            "payment": {
+                "is_paid": b.payment.is_paid if b.payment else False,
+            },
+        }
+        for b in bookings
+    ]}
 
 
 @app.post("/api/admin/bookings/{booking_id}/confirm")

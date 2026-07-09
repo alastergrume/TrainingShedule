@@ -226,11 +226,14 @@ class AdminService:
     
     # Booking management
     def get_pending_bookings(self) -> List[Booking]:
-        """Get all pending bookings requiring admin approval."""
+        """Get all active bookings (pending first, then confirmed)."""
         return (
             self.db.query(Booking)
-            .filter(Booking.status == BookingStatus.PENDING)
-            .order_by(Booking.created_at)
+            .filter(Booking.status.in_([BookingStatus.PENDING, BookingStatus.CONFIRMED]))
+            .order_by(
+                (Booking.status == BookingStatus.PENDING).desc(),
+                Booking.created_at.desc(),
+            )
             .all()
         )
     
