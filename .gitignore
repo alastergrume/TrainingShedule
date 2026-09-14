@@ -108,7 +108,11 @@ __pypackages__/
 
 # Celery stuff
 celerybeat-schedule
+celerybeat-schedule.*
 celerybeat.pid
+
+# vkbottle cache
+.vkbottle/
 
 # SageMath parsed files
 *.sage.py

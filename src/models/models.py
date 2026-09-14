@@ -157,3 +157,41 @@ class AdminAction(Base):
     performed_at = Column(DateTime(timezone=True), server_default=func.now())
 
     admin = relationship("User")
+
+
+class VkFriend(Base):
+    __tablename__ = "vk_friends"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vk_user_id = Column(Integer, unique=True, nullable=False, index=True)
+    first_name = Column(String(100), default="")
+    last_name = Column(String(100), default="")
+    is_deactivated = Column(Boolean, default=False)
+    deactivated_reason = Column(String(20), nullable=True)
+    synced_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    invites = relationship("VkInvite", back_populates="friend")
+
+
+class VkCommunityMember(Base):
+    __tablename__ = "vk_community_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vk_user_id = Column(Integer, unique=True, nullable=False, index=True)
+    first_name = Column(String(100), default="")
+    last_name = Column(String(100), default="")
+    is_deactivated = Column(Boolean, default=False)
+    deactivated_reason = Column(String(20), nullable=True)
+    synced_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class VkInvite(Base):
+    __tablename__ = "vk_invites"
+
+    id = Column(Integer, primary_key=True, index=True)
+    friend_id = Column(Integer, ForeignKey("vk_friends.id"), nullable=False)
+    status = Column(String(20), nullable=False)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    friend = relationship("VkFriend", back_populates="invites")

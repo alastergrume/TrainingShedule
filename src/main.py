@@ -13,6 +13,7 @@ from typing import Optional
 
 from src.config import settings
 from src.models import Base, engine, get_db
+from src.routers.vk_invite import router as vk_invite_router
 from src.models.models import User, Booking, Training
 from src.business_logic import ScheduleService, AdminService
 from src.business_logic.schemas import (
@@ -69,6 +70,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(vk_invite_router)
 
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.isdir(_static_dir):
@@ -711,6 +714,14 @@ async def admin_panel():
     path = os.path.join(os.path.dirname(__file__), "static", "admin", "index.html")
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="Admin panel not found")
+    return FileResponse(path)
+
+
+@app.get("/vk-invite")
+async def vk_invite_page():
+    path = os.path.join(os.path.dirname(__file__), "static", "vk-invite", "index.html")
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="VK Invite page not found")
     return FileResponse(path)
 
 

@@ -10,6 +10,9 @@ from .models import (
     PublishedSchedule,
     AdminAction,
     TrainingType,
+    VkFriend,
+    VkCommunityMember,
+    VkInvite,
 )
 
 __all__ = [
@@ -27,4 +30,7 @@ __all__ = [
     "PublishedSchedule",
     "AdminAction",
     "TrainingType",
+    "VkFriend",
+    "VkCommunityMember",
+    "VkInvite",
 ]

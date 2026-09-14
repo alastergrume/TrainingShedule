@@ -9,7 +9,7 @@ import logging
 from src.config import settings
 from pathlib import Path
 from src.models.base import SessionLocal
-from src.models.models import Booking, ScheduleEntry, Reminder, User
+from src.models.models import Booking, ScheduleEntry, Reminder, User, VkFriend, VkCommunityMember, VkInvite
 from src.utils.formatter import ScheduleFormatter
 
 # # Register messengers so MessengerFactory knows about them
@@ -52,6 +52,10 @@ celery_app.conf.update(
         'cleanup-old-data': {
             'task': 'src.celery_app.cleanup_old_data',
             'schedule': crontab(hour=3, minute=0),
+        },
+        'vk-invite-friends': {
+            'task': 'src.celery_app.invite_vk_friends',
+            'schedule': crontab(hour=10, minute=0),
         },
     },
 )
@@ -337,3 +341,80 @@ def publish_schedule_to_channels(week_start: str, schedule_data: dict,
         return {"status": "error", "error": str(e)}
     finally:
         db.close()
+
+
+async def _do_invite_friends(daily_limit=None, delay_seconds=None, friend_ids=None):
+    from vkbottle import API
+
+    if not settings.VK_USER_TOKEN or not settings.VK_GROUP_ID:
+        logger.warning("VK_USER_TOKEN or VK_GROUP_ID not set, skipping invite task")
+        return {"status": "skipped"}
+
+    limit = daily_limit if daily_limit is not None else settings.VK_INVITE_DAILY_LIMIT
+    delay = delay_seconds if delay_seconds is not None else settings.VK_INVITE_DELAY_SECONDS
+
+    db = SessionLocal()
+    try:
+        user_api = API(token=settings.VK_USER_TOKEN)
+
+        if friend_ids:
+            to_invite = db.query(VkFriend).filter(VkFriend.id.in_(friend_ids)).all()
+        else:
+            member_ids = db.query(VkCommunityMember.vk_user_id)
+            invited_friend_ids = (
+                db.query(VkInvite.friend_id).filter(VkInvite.status == "invited")
+            )
+            to_invite = (
+                db.query(VkFriend)
+                .filter(
+                    VkFriend.is_deactivated == False,
+                    ~VkFriend.vk_user_id.in_(member_ids),
+                    ~VkFriend.id.in_(invited_friend_ids),
+                )
+                .limit(limit)
+                .all()
+            )
+
+        sent = 0
+        for friend in to_invite:
+            if sent >= limit:
+                break
+            try:
+                await user_api.request(
+                    "groups.invite",
+                    {"group_id": settings.VK_GROUP_ID, "user_id": friend.vk_user_id},
+                )
+                db.add(VkInvite(friend_id=friend.id, status="invited"))
+                sent += 1
+                logger.info(f"Invited VK user {friend.vk_user_id}")
+            except Exception as e:
+                err = str(e)
+                if "captcha" in err.lower() or "[14]" in err:
+                    logger.error("Captcha required — stopping invite task")
+                    db.add(VkInvite(friend_id=friend.id, status="error", error_message=err))
+                    db.commit()
+                    return {"status": "captcha", "sent": sent}
+                db.add(VkInvite(friend_id=friend.id, status="error", error_message=err))
+                logger.warning(f"Failed to invite {friend.vk_user_id}: {err}")
+
+            db.commit()
+            await asyncio.sleep(delay)
+
+        logger.info(f"VK invite task done: {sent} invited")
+        return {"status": "success", "sent": sent}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"VK invite task failed: {e}")
+        return {"status": "error", "error": str(e)}
+    finally:
+        db.close()
+
+
+@celery_app.task
+def invite_vk_friends(daily_limit=None, delay_seconds=None):
+    return asyncio.run(_do_invite_friends(daily_limit, delay_seconds))
+
+
+@celery_app.task
+def invite_vk_friends_selected(friend_ids, daily_limit=None, delay_seconds=None):
+    return asyncio.run(_do_invite_friends(daily_limit, delay_seconds, friend_ids))

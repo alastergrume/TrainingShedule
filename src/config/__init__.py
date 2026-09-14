@@ -44,8 +44,11 @@ class Settings(BaseSettings):
     # VK
     VK_GROUP_TOKEN: str = ""
     VK_GROUP_ID: int = 0
+    VK_USER_TOKEN: str = ""
     VK_CONFIRMATION_CODE: str = ""
     VK_SECRET_KEY: str = ""
+    VK_INVITE_DAILY_LIMIT: int = 40
+    VK_INVITE_DELAY_SECONDS: int = 3
     
     # Application
     DEBUG: bool = True
@@ -64,5 +67,9 @@ class Settings(BaseSettings):
     # Mini App — публичный URL приложения (HTTPS в проде, ngrok для локальных тестов)
     MINIAPP_URL: str = "http://localhost:8000"
 
+class VkSettings(BaseSettings):
+    model_config = ConfigDict(env_file="./.env", extra="ignore")
+    VK_GROUP_TOKEN: str = ""
 
 settings = Settings()
+vk_settings = VkSettings()
