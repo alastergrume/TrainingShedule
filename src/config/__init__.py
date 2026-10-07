@@ -45,6 +45,23 @@ class Settings(BaseSettings):
     VK_GROUP_TOKEN: str = ""
     VK_GROUP_ID: int = 0
     VK_USER_TOKEN: str = ""
+    VK_ADMIN_IDS: str = ""  # Keep as string first
+
+    @field_validator("VK_ADMIN_IDS", mode="after")
+    @classmethod
+    def parse_vk_admin_ids(cls, v):
+        if isinstance(v, str):
+            v = v.strip()
+            if not v:
+                return []
+            try:
+                return [int(id.strip()) for id in v.split(",")]
+            except ValueError:
+                return []
+        if isinstance(v, list):
+            return v
+        return []
+
     VK_CONFIRMATION_CODE: str = ""
     VK_SECRET_KEY: str = ""
     VK_INVITE_DAILY_LIMIT: int = 40

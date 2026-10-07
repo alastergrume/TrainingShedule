@@ -3,7 +3,40 @@
 Порядок работ после добавления системы приглашений ВК (ветка `feature/vk-invite-system`).
 
 1. [x] Переписать `src/messengers/vk/bot.py` с vk_api на vkbottle — см. [migrate-vk-bot-to-vkbottle.md](migrate-vk-bot-to-vkbottle.md)
-2. [ ] Развернуть на тестовой локальной ВМ
-3. [ ] Подключить группу/сообщество к боту
-4. [ ] Протестировать создание поста с расписанием в чате группы
-5. [ ] Протестировать редактирование поста, удаление поста
+2. [x] Раннер: `scripts/run_vk_bot.py` + сервис `vk-bot` в docker-compose
+3. [x] Повторить функционал Telegram-бота в VK (команды, админ-панель, FSM, запись на тренировку)
+4. [ ] Развернуть на тестовой локальной ВМ
+5. [ ] Подключить группу/сообщество к боту
+6. [ ] Протестировать создание поста с расписанием в чате группы
+7. [ ] Протестировать редактирование поста, удаление поста
+
+## Фаза 0 — починки (после обкатки VK, до рефакторинга)
+
+Хендлеры обоих ботов работают с БД напрямую вместо вызова сервисов, из-за чего
+теряются проверки и аудит. Разбито на независимые задачи:
+
+- [ ] `create_training` → `AdminService.create_training` — возвращает `_check_time_conflict`
+      (сейчас шаблоны можно создать в наложение) и запись в `admin_actions`
+- [ ] `confirm_booking` / `reject_booking` → `AdminService.*` — возвращает аудит
+- [ ] `delete_training` → `AdminService.delete_training` — возвращает аудит
+- [ ] `create_booking` → `ScheduleService.create_booking`
+- [ ] `get_pending_bookings` → `AdminService.get_pending_bookings`
+
+## Фаза 1+ — абстракция слоя взаимодействия
+
+- [ ] Вынести диалоги (экраны, кнопки, FSM) в платформенно-независимый слой;
+      боты становятся адаптерами рендеринга
+- [ ] Обобщить веер публикации: `published_schedule_targets(schedule_id, channel, external_id)`
+      вместо колонок `telegram_message_id` / `vk_post_id`
+- [ ] Обобщить идентичность: `user_identities(user_id, channel, external_id)`
+      вместо `User.telegram_id` / `User.vk_id`
+- [ ] Реестр включённых каналов в одном месте вместо россыпи `if settings.*`
+- [ ] Убрать дубли `vk_bot_main.py` / `src/messengers/vk/long_poll_bot.py`
+- [ ] Убрать `VK_CONFIRMATION_CODE` / `VK_SECRET_KEY` (Callback API не используется)
+- [ ] Дедуплицировать `RU_DAYS` / `TRAINING_TYPES` (сейчас в обоих ботах)
+
+## Известные дефекты эталона (Telegram), не исправлены намеренно
+
+- `Bot(token=...)` создаётся без `parse_mode`, поэтому теги `<b>` в текстах
+  TG-бота показываются пользователю буквально. В VK-боте разметки нет вообще —
+  там текст изначально чистый.
