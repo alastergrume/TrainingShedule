@@ -4,7 +4,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -580,11 +579,7 @@ async def clear_week(
         if published.vk_post_id and settings.VK_GROUP_TOKEN:
             try:
                 vk = MessengerFactory.create('vk')
-                await asyncio.to_thread(
-                    vk.vk.wall.delete,
-                    owner_id=f"-{vk.group_id}",
-                    post_id=published.vk_post_id,
-                )
+                await vk.delete_post(published.vk_post_id)
             except Exception as e:
                 logger.warning(f"Failed to delete VK post: {e}")
         db.delete(published)

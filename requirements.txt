@@ -10,7 +10,7 @@ python-dotenv==1.0.0
 aiogram==3.4.1
 
 # VK
-vk-api==11.9.9
+vkbottle==4.10.0
 
 # Celery
 celery==5.3.4

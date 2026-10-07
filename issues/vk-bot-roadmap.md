@@ -2,7 +2,7 @@
 
 Порядок работ после добавления системы приглашений ВК (ветка `feature/vk-invite-system`).
 
-1. [ ] Переписать `src/messengers/vk/bot.py` с vk_api на vkbottle — см. [migrate-vk-bot-to-vkbottle.md](migrate-vk-bot-to-vkbottle.md)
+1. [x] Переписать `src/messengers/vk/bot.py` с vk_api на vkbottle — см. [migrate-vk-bot-to-vkbottle.md](migrate-vk-bot-to-vkbottle.md)
 2. [ ] Развернуть на тестовой локальной ВМ
 3. [ ] Подключить группу/сообщество к боту
 4. [ ] Протестировать создание поста с расписанием в чате группы

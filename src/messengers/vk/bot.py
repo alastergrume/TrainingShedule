@@ -1,9 +1,10 @@
-import asyncio
 import logging
+import random
+import re
 from typing import Dict, Any, Optional
-import vk_api
-from vk_api.bot_longpoll import VkBotLongPoll, VkBotEventType
-from vk_api.utils import get_random_id
+from vkbottle import API
+from vkbottle.bot import Bot, Message
+from vkbottle.dispatch.rules.base import VBMLRule
 
 from src.config import settings
 from src.messengers.interfaces.messenger import MessengerInterface
@@ -11,30 +12,30 @@ from src.messengers.interfaces.messenger import MessengerInterface
 logger = logging.getLogger(__name__)
 
 
+def _random_id() -> int:
+    """VK требует random_id для дедупликации сообщений."""
+    return random.getrandbits(31)
+
+
 class VKBot(MessengerInterface):
-    """VK bot implementation using vk-api."""
+    """VK bot implementation using vkbottle."""
 
     def __init__(self):
         self.group_token = settings.VK_GROUP_TOKEN
         self.group_id = settings.VK_GROUP_ID
-        self.confirmation_code = settings.VK_CONFIRMATION_CODE
-        self.secret_key = settings.VK_SECRET_KEY
 
-        self.vk_session = vk_api.VkApi(token=self.group_token)
-        self.vk = self.vk_session.get_api()
-        self.longpoll = VkBotLongPoll(self.vk_session, self.group_id)
+        self.api = API(token=self.group_token)
+        self._bot: Optional[Bot] = None
 
     async def send_message(self, chat_id: str, text: str, **kwargs) -> Any:
         try:
-            result = await asyncio.to_thread(
-                self.vk.messages.send,
+            return await self.api.messages.send(
                 peer_id=int(chat_id),
                 message=text,
-                random_id=get_random_id(),
+                random_id=_random_id(),
                 keyboard=kwargs.get('keyboard'),
                 attachment=kwargs.get('attachment'),
             )
-            return result
         except Exception as e:
             logger.error(f"Failed to send VK message: {e}")
             raise
@@ -47,10 +48,9 @@ class VKBot(MessengerInterface):
 
     async def delete_message(self, chat_id: str, message_id: int) -> bool:
         try:
-            await asyncio.to_thread(
-                self.vk.messages.delete,
-                message_ids=message_id,
-                delete_for_all=1,
+            await self.api.messages.delete(
+                message_ids=[message_id],
+                delete_for_all=True,
             )
             return True
         except Exception as e:
@@ -60,14 +60,12 @@ class VKBot(MessengerInterface):
     async def send_schedule(self, schedule_data: Dict, **kwargs) -> Dict:
         formatted_text = self._format_schedule(schedule_data)
         try:
-            post = await asyncio.to_thread(
-                self.vk.wall.post,
-                owner_id=f"-{self.group_id}",
+            post = await self.api.wall.post(
+                owner_id=-self.group_id,
                 message=formatted_text,
-                from_group=1,
+                from_group=True,
             )
-            post_id = post.get('post_id')
-            return {'post_id': post_id, 'channel': 'vk', 'group_id': self.group_id}
+            return {'post_id': post.post_id, 'channel': 'vk', 'group_id': self.group_id}
         except Exception as e:
             logger.error(f"Failed to post to VK wall: {e}")
             message_id = await self.send_message(chat_id=str(self.group_id), text=formatted_text)
@@ -76,9 +74,8 @@ class VKBot(MessengerInterface):
     async def update_schedule(self, schedule_data: Dict, post_id: int, **kwargs) -> Dict:
         formatted_text = self._format_schedule(schedule_data)
         try:
-            await asyncio.to_thread(
-                self.vk.wall.edit,
-                owner_id=f"-{self.group_id}",
+            await self.api.wall.edit(
+                owner_id=-self.group_id,
                 post_id=post_id,
                 message=formatted_text,
             )
@@ -89,12 +86,22 @@ class VKBot(MessengerInterface):
 
     async def check_post_exists(self, post_id: int) -> bool:
         try:
-            result = await asyncio.to_thread(
-                self.vk.wall.getById,
-                posts=f"-{self.group_id}_{post_id}",
+            result = await self.api.wall.get_by_id(
+                posts=[f"-{self.group_id}_{post_id}"],
             )
-            return bool(result)
+            return bool(result.items)
         except Exception:
+            return False
+
+    async def delete_post(self, post_id: int) -> bool:
+        try:
+            await self.api.wall.delete(
+                owner_id=-self.group_id,
+                post_id=post_id,
+            )
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete VK post {post_id}: {e}")
             return False
 
     async def send_reminder(self, user_id: str, reminder_data: Dict) -> bool:
@@ -108,18 +115,17 @@ class VKBot(MessengerInterface):
 
     async def get_user_info(self, user_id: str) -> Dict:
         try:
-            users = await asyncio.to_thread(
-                self.vk.users.get,
-                user_ids=user_id,
-                fields='first_name,last_name,screen_name',
+            users = await self.api.users.get(
+                user_ids=[user_id],
+                fields=['screen_name'],
             )
             if users:
                 user = users[0]
                 return {
-                    'id': user['id'],
-                    'username': user.get('screen_name'),
-                    'first_name': user.get('first_name'),
-                    'last_name': user.get('last_name'),
+                    'id': user.id,
+                    'username': user.screen_name,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
                 }
             return {}
         except Exception as e:
@@ -139,40 +145,24 @@ class VKBot(MessengerInterface):
         from src.utils.formatter import ScheduleFormatter
         return ScheduleFormatter.format_reminder(reminder_data)
 
-    # --- Синхронные обработчики событий (longpoll — sync контекст) ---
+    # --- Обработчики сообщений (vkbottle longpoll) ---
 
-    def process_event(self, event):
-        if event.type == VkBotEventType.MESSAGE_NEW:
-            message = event.message
-            text = message.text.lower()
-
-            if text in ('начать', '/start'):
-                self._handle_start(message)
-            elif text in ('расписание', '/schedule'):
-                self._handle_schedule(message)
-            elif text in ('записаться', '/book'):
-                self._handle_book(message)
-
-    def _handle_start(self, message):
-        self.vk.messages.send(
-            peer_id=message.peer_id,
-            message=(
-                "Привет! Я бот для записи на тренировки.\n"
-                "Напишите 'расписание' чтобы посмотреть расписание,\n"
-                "'записаться' чтобы подать заявку на тренировку."
-            ),
-            random_id=get_random_id(),
+    async def _handle_start(self, message: Message):
+        await message.answer(
+            "Привет! Я бот для записи на тренировки.\n"
+            "Напишите 'расписание' чтобы посмотреть расписание,\n"
+            "'записаться' чтобы подать заявку на тренировку."
         )
 
-    def _handle_schedule(self, message):
+    async def _handle_schedule(self, message: Message):
         from src.models.base import SessionLocal
         from src.utils.formatter import ScheduleGenerator, ScheduleFormatter
-        from datetime import date
+        from datetime import date, timedelta
 
         db = SessionLocal()
         try:
             today = date.today()
-            week_start = today - __import__('datetime').timedelta(days=today.weekday())
+            week_start = today - timedelta(days=today.weekday())
             days = ScheduleGenerator.generate_from_db(db, week_start)
             text = ScheduleFormatter.format_week_schedule(days, week_start)
         except Exception as e:
@@ -181,23 +171,28 @@ class VKBot(MessengerInterface):
         finally:
             db.close()
 
-        self.vk.messages.send(
-            peer_id=message.peer_id,
-            message=text,
-            random_id=get_random_id(),
-        )
+        await message.answer(text)
 
-    def _handle_book(self, message):
-        self.vk.messages.send(
-            peer_id=message.peer_id,
-            message="Для записи на тренировку обратитесь к администратору.",
-            random_id=get_random_id(),
-        )
+    async def _handle_book(self, message: Message):
+        await message.answer("Для записи на тренировку обратитесь к администратору.")
 
-    def run(self):
+    @staticmethod
+    def _text_rule(*variants: str) -> VBMLRule:
+        # IGNORECASE — команды независимы от регистра
+        return VBMLRule(list(variants), flags=re.IGNORECASE | re.DOTALL)
+
+    def _build_bot(self) -> Bot:
+        bot = Bot(api=self.api)
+        bot.on.message(self._text_rule("начать", "/start"))(self._handle_start)
+        bot.on.message(self._text_rule("расписание", "/schedule"))(self._handle_schedule)
+        bot.on.message(self._text_rule("записаться", "/book"))(self._handle_book)
+        return bot
+
+    async def run(self):
         logger.info("Starting VK bot...")
-        for event in self.longpoll.listen():
-            self.process_event(event)
+        if self._bot is None:
+            self._bot = self._build_bot()
+        await self._bot.run_polling()
 
 
 # Register with factory
