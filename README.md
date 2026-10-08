@@ -221,6 +221,23 @@ ADMIN_NOTIFICATION_ENABLED=True
 2. Создайте соответствующие схемы в `src/business_logic/schemas/`
 3. Добавьте API endpoints в `src/main.py`
 
+### Тесты
+
+Тесты не требуют ни БД, ни Redis, ни доступа к VK/Telegram: всё внешнее замокано
+(`tests/fakes.py`, `tests/vk/conftest.py`), а `tests/conftest.py` роняет тест с
+понятной ошибкой, если код всё же полезет в сеть или откроет сессию БД.
+Подходят для CI (Jenkins) как есть, `.env` не нужен.
+
+```bash
+pip install -r requirements.txt
+pytest                                              # весь набор, ~4 сек
+pytest tests/vk/test_admin_flows.py                 # один файл
+pytest --junitxml=test-results/junit.xml            # отчёт для Jenkins
+```
+
+`FakeSession` отдаёт заранее заданные строки и **не вычисляет фильтры**: тесты
+проверяют логику хендлеров, а не корректность SQL-запросов.
+
 ### Миграции базы данных
 
 ```bash
